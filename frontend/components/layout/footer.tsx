@@ -66,8 +66,8 @@ export default function Footer() {
     <footer className="bg-zinc-950 border-t border-zinc-900 text-zinc-400 py-16">
       <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 md:grid-cols-4 gap-12 mb-12">
         {/* Brand column */}
-        <div className="flex flex-col gap-4">
-          <Logo size={36} />
+        <div className="flex flex-col gap-4 items-start">
+          <Logo size={72} layout="vertical" className="!items-start !text-left" />
           <p className="text-sm leading-relaxed text-zinc-500 max-w-xs mt-2">
             The open-source, source-grounded research notebook for privacy, model freedom, and secure knowledge workspaces.
           </p>

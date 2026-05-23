@@ -514,7 +514,7 @@ export default function Dashboard() {
       <aside className="w-64 bg-zinc-950 border-r border-zinc-900/60 flex flex-col justify-between p-4 flex-shrink-0">
         <div className="flex flex-col gap-6">
           <Link href="/">
-            <Logo size={28} />
+            <Logo size={44} />
           </Link>
           
           {/* Create Workspace */}

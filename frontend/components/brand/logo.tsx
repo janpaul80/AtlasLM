@@ -2,18 +2,44 @@ import React from "react";
 
 interface LogoProps {
   className?: string;
-  size?: number; // width and height multiplier
+  size?: number; // size of the icon
   showText?: boolean;
+  layout?: "horizontal" | "vertical";
 }
 
-export default function Logo({ className = "", size = 48, showText = true }: LogoProps) {
-  // Scales viewBox="0 0 1000 1000" based on size prop
+export default function Logo({ 
+  className = "", 
+  size = 48, 
+  showText = true,
+  layout = "horizontal"
+}: LogoProps) {
+  
+  // Scales text size based on icon size
+  const getTextSizeClass = () => {
+    if (layout === "vertical") {
+      if (size < 60) return "text-xl mt-3";
+      if (size < 100) return "text-2xl mt-4";
+      return "text-4xl mt-6";
+    } else {
+      if (size < 34) return "text-xl";
+      if (size < 44) return "text-2xl";
+      if (size < 52) return "text-3xl";
+      return "text-4xl";
+    }
+  };
+
+  const getGapClass = () => {
+    if (layout === "vertical") return "flex-col items-center text-center";
+    if (size < 38) return "flex-row items-center gap-3";
+    return "flex-row items-center gap-4";
+  };
+
   return (
-    <div className={`flex items-center gap-3 select-none ${className}`}>
+    <div className={`flex select-none ${getGapClass()} ${className}`}>
       <svg
         width={size}
-        height={size}
-        viewBox="0 0 1000 1000"
+        height={size * (560 / 800)} // Maintain correct cropped aspect ratio
+        viewBox="100 210 800 560"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
         className="transition-transform duration-300 hover:scale-105"
@@ -41,9 +67,20 @@ export default function Logo({ className = "", size = 48, showText = true }: Log
         />
       </svg>
       {showText && (
-        <span className="font-sans font-extrabold tracking-tight text-white text-xl">
-          Atlas<span className="text-orange-500 font-medium">LM</span>
-        </span>
+        layout === "vertical" ? (
+          /* Vertical Stacked Logo Text - Matches the uploaded design 100% exactly */
+          <span 
+            className={`font-sans font-bold tracking-wider text-zinc-300/90 uppercase ${getTextSizeClass()}`}
+            style={{ letterSpacing: "0.15em" }}
+          >
+            Atlas LM
+          </span>
+        ) : (
+          /* Horizontal Inline Logo Text */
+          <span className={`font-sans font-extrabold tracking-tight text-white ${getTextSizeClass()}`}>
+            Atlas<span className="text-orange-500 font-medium">LM</span>
+          </span>
+        )
       )}
     </div>
   );

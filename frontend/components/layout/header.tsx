@@ -34,7 +34,7 @@ export default function Header() {
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
         {/* Logo Link */}
         <Link href="/">
-          <Logo size={32} />
+          <Logo size={48} />
         </Link>
 
         {/* Center Nav Links */}

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import Header from "../components/layout/header";
 import Footer from "../components/layout/footer";
+import Logo from "../components/brand/logo";
 
 export default function Home() {
   // SVG Icons (Professional, no emojis)
@@ -35,8 +36,18 @@ export default function Home() {
       <Header />
 
       {/* Main Hero Section */}
-      <main className="flex-grow pt-32 pb-24 px-6 max-w-7xl mx-auto flex flex-col items-center text-center relative z-10">
+      <main className="flex-grow pt-28 pb-24 px-6 max-w-7xl mx-auto flex flex-col items-center text-center relative z-10">
         
+        {/* Centered Vertical Corporate Brand Logo */}
+        <motion.div
+          initial={{ opacity: 0, y: -20, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.7 }}
+          className="mb-8"
+        >
+          <Logo layout="vertical" size={160} />
+        </motion.div>
+
         {/* Top Product Announcement Tag */}
         <motion.div
           initial={{ opacity: 0, y: 15 }}
