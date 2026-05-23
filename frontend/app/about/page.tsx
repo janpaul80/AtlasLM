@@ -110,13 +110,24 @@ export default function AboutPage() {
                 href="https://paulhartmann.dev"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 text-sm text-white font-bold bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 px-5 py-3 rounded-lg transition-all duration-250"
+                className="inline-flex items-center gap-2 text-sm text-white font-bold bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 px-5 py-3 rounded-lg transition-all duration-250 w-full justify-center md:w-auto"
               >
                 paulhartmann.dev
                 <svg className="w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                 </svg>
               </a>
+
+              {/* Founder Image (paul.png) - Styled Premium Frame, Strictly Fitted */}
+              <div className="mt-8 rounded-2xl border border-zinc-900 bg-zinc-950 p-1.5 max-w-[240px] shadow-2xl shadow-black/80 flex items-center justify-center relative overflow-hidden group">
+                {/* Subtle visual gradient edge glow */}
+                <div className="absolute inset-0 bg-gradient-to-br from-orange-500/5 via-transparent to-transparent pointer-events-none" />
+                <img 
+                  src="/paul.png" 
+                  alt="Paul Hartmann" 
+                  className="rounded-xl w-full h-auto object-cover border border-zinc-900/60 filter grayscale group-hover:grayscale-0 transition-all duration-500"
+                />
+              </div>
             </div>
           </motion.div>
 
