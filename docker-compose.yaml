@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: atlaslm
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-atlaspass}
+      POSTGRES_DB: atlaslm_db
+    ports:
+      - "5435:5432" # Isolated host port mapping to avoid database port conflicts
+    volumes:
+      - atlaslm_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atlaslm -d atlaslm_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6385:6379" # Isolated host port mapping to avoid caching port conflicts
+    volumes:
+      - atlaslm_redis:/data
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://atlaslm:${DB_PASSWORD:-atlaspass}@db:5432/atlaslm_db
+      - REDIS_URL=redis://redis:6379/0
+      - LANGDOCK_API_KEY=${LANGDOCK_API_KEY}
+      - LANGDOCK_ENDPOINT_URL=https://api.langdock.com/openai/eu/v1
+      - BLACKBOX_API_KEY=${BLACKBOX_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - JWT_SECRET=${JWT_SECRET:-ceb184b89d7d6a91f7a1142d6b21fb5f768ecf3db1be5529c865a20784752db82a67957ec826a8bc3f7fbc67bdccba8ba3e5689500c1e55140d4edbe8636089d}
+    ports:
+      - "8080:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8080
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+    ports:
+      - "3010:3000" # Mapped to port 3010 as routed by Nginx
+    depends_on:
+      - backend
+
+volumes:
+  atlaslm_data:
+  atlaslm_redis:
