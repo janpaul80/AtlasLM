@@ -136,7 +136,7 @@ export default function Footer() {
           &copy; {currentYear} AtlasLM. All rights reserved.
         </p>
         <p className="text-xs text-zinc-700">
-          Built securely with Supabase & Langdock.
+          Built securely with Supabase & premium AI infrastructure.
         </p>
       </div>
     </footer>

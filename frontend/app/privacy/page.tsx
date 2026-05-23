@@ -41,7 +41,7 @@ export default function PrivacyPage() {
           <section className="mb-8">
             <h2 className="text-lg font-bold text-white mb-3">3. External AI Processing</h2>
             <p>
-              To execute source-grounded chat and completions, context chunks are sent to your chosen AI model provider (such as Langdock, Blackbox AI, or OpenRouter). These transactions are executed via encrypted TLS connections and adhere to standard API data privacy policies (guaranteeing that model builders do not persist or train on API payloads).
+              To execute source-grounded chat and completions, context chunks are sent to your chosen AI model provider (such as our premium AI infrastructure, Blackbox AI, or OpenRouter). These transactions are executed via encrypted TLS connections and adhere to standard API data privacy policies (guaranteeing that model builders do not persist or train on API payloads).
             </p>
           </section>
 

@@ -491,7 +491,7 @@ export default function Dashboard() {
                     onChange={(e) => setActiveProvider(e.target.value)}
                     className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-sm text-zinc-200 focus:outline-none focus:border-zinc-700 transition-colors"
                   >
-                    <option value="langdock">Langdock AI (Default GPT-4o)</option>
+                    <option value="langdock">Premium AI (GPT-4o)</option>
                     <option value="blackbox">Blackbox AI</option>
                     <option value="openrouter">OpenRouter Auto</option>
                     <option value="ollama">Ollama (Server Local Llama3)</option>

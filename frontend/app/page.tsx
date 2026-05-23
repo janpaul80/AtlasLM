@@ -119,7 +119,7 @@ export default function Home() {
                 <span className="text-xs text-zinc-600 font-mono ml-4">workspace://research-deep-learning</span>
               </div>
               <span className="text-xs bg-zinc-900 text-zinc-400 px-3 py-1 rounded border border-zinc-800">
-                Model: Langdock GPT-4o
+                Model: GPT-4o via Premium AI
               </span>
             </div>
             
@@ -166,7 +166,7 @@ export default function Home() {
             </div>
             <h3 className="text-lg font-bold text-white mb-2">Multi-Model Orchestration</h3>
             <p className="text-sm text-zinc-500 leading-relaxed">
-              Connect our backend seamlessly to your own Langdock pipelines, Blackbox models, OpenRouter keys, or fully local Ollama runtimes.
+              Connect our backend seamlessly to premium AI pipelines, Blackbox models, OpenRouter keys, or fully local Ollama runtimes.
             </p>
           </div>
 

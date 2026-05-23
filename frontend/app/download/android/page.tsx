@@ -144,7 +144,7 @@ export default function AndroidDownloadPage() {
                 <div>
                   <h4 className="text-sm font-bold text-white mb-1">Same Robust Provider Stack</h4>
                   <p className="text-xs text-zinc-500 leading-relaxed">
-                    Connect seamlessly to Langdock, Blackbox AI, OpenRouter, and custom local endpoints with streaming SSE and full-speed page parsing.
+                    Connect seamlessly to premium AI providers, Blackbox AI, OpenRouter, and custom local endpoints with streaming SSE and full-speed page parsing.
                   </p>
                 </div>
               </div>

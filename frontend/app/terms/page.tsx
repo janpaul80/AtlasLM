@@ -41,7 +41,7 @@ export default function TermsPage() {
           <section className="mb-8">
             <h2 className="text-lg font-bold text-white mb-3">3. API Model Configurations</h2>
             <p>
-              When utilizing model provider integrations (including Langdock, Blackbox AI, OpenRouter, and Ollama), you agree to abide by the respective usage terms and billing parameters of those third-party providers. We are not responsible for model pricing changes or service failures originating from external providers.
+              When utilizing model provider integrations (including our premium AI providers, Blackbox AI, OpenRouter, and Ollama), you agree to abide by the respective usage terms and billing parameters of those third-party providers. We are not responsible for model pricing changes or service failures originating from external providers.
             </p>
           </section>
 
