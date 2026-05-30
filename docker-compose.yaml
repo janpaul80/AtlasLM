@@ -11,6 +11,7 @@ services:
       - "5435:5432" # Isolated host port mapping to avoid database port conflicts
     volumes:
       - atlaslm_data:/var/lib/postgresql/data
+      - ./docker/init:/docker-entrypoint-initdb.d # Mount init SQL for pgvector extension
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U atlaslm -d atlaslm_db"]
       interval: 5s
