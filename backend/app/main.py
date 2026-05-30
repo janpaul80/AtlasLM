@@ -1,6 +1,7 @@
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from .core.config import settings
 from .core.database import engine, Base
 from .api.endpoints import router as api_router
@@ -18,7 +19,7 @@ except Exception as e:
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
-    openapi_url=f"{settings.API_V1_STR}/openapi.json"
+    openapi_url="/openapi.json"
 )
 
 # Set up CORS rules
@@ -38,13 +39,17 @@ app.add_middleware(
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
-@app.get("/")
+@app.get("/", tags=["system"])
 def read_root():
     return {
         "status": "healthy",
         "project": settings.PROJECT_NAME,
         "docs_url": "/docs"
     }
+
+@app.get("/health", tags=["system"])
+async def health_check():
+    return {"status": "ok"}
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
