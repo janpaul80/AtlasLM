@@ -1,16 +1,23 @@
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from .core.config import settings
 from .core.database import engine, Base
 from .api.endpoints import router as api_router
+from sqlalchemy import text
+
+# Enable pgvector extension before table creation.
+# Runs every startup - safe on already-enabled extensions.
+try:
+    with engine.connect() as conn:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        conn.commit()
+    print("pgvector extension enabled.")
+except Exception as e:
+    print(f"WARNING: Could not enable pgvector extension: {e}")
 
 # Initialize tables if not already present
-# (In production development, migrations like Alembic are preferred,
-# but for local bootstrap, dynamic metadata create works perfectly)
 try:
-    # Try importing models to register them with metadata
     from . import models
     Base.metadata.create_all(bind=engine)
     print("Database tables initialized successfully.")
@@ -22,8 +29,7 @@ app = FastAPI(
     openapi_url="/openapi.json"
 )
 
-# Set up CORS rules
-# Allows connection from Next.js dev server, production port 3010, and cloud domain
+# CORS - allows Next.js dev, port 3010, and production domain
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
