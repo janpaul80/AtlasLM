@@ -240,26 +240,77 @@ async def ingest_url(
     uid = current_user_id(request)
     _get_owned_workspace(workspace_id, uid, db)
 
-    url = body.url
+    url = str(body.url).strip()
+    if not url.lower().startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="URL must start with http:// or https://")
+
     filename = url.replace("https://", "").replace("http://", "").split("/")[0] + " (Web)"
 
     import httpx
     try:
         async with httpx.AsyncClient() as client:
-            res = await client.get(url, timeout=10.0, follow_redirects=True)
+            res = await client.get(
+                url,
+                timeout=15.0,
+                follow_redirects=True,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (compatible; AtlasLM/1.0; +https://atlaslm.app)",
+                    "Accept": "text/html,application/xhtml+xml",
+                },
+            )
             res.raise_for_status()
+            content_type = res.headers.get("content-type", "")
+            if "text/html" not in content_type and "xml" not in content_type and content_type:
+                raise HTTPException(
+                    status_code=422,
+                    detail="The URL did not return a web page. Only HTML pages are supported for now.",
+                )
             html_text = res.text
-            clean_text = re.sub(r'<[^>]+>', ' ', html_text)
-            clean_text = re.sub(r'\s+', ' ', clean_text).strip()
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to crawl URL: {str(e)}")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail="AtlasLM could not reach that URL. Check the address and try again.",
+        )
+
+    MAX_HTML_SIZE = 10 * 1024 * 1024
+    html_bytes = html_text.encode("utf-8")[:MAX_HTML_SIZE]
 
     pipeline = DocumentPipeline(db)
+
+    # Async path (same pattern as upload_document)
+    if redis_healthy():
+        doc = pipeline.create_pending_document(
+            workspace_id=workspace_id,
+            filename=filename,
+            file_type="url",
+            source_url=url,
+        )
+        try:
+            enqueue_ingestion_job(
+                document_id=doc.id,
+                workspace_id=workspace_id,
+                filename=filename,
+                file_type="url",
+                file_bytes=html_bytes,
+                source_url=url,
+            )
+        except Exception:
+            db.delete(doc)
+            db.commit()
+        else:
+            return JSONResponse(
+                status_code=status.HTTP_202_ACCEPTED,
+                content=jsonable_encoder(DocumentOut.model_validate(doc)),
+            )
+
+    # Sync fallback
     try:
         doc = await pipeline.ingest_document(
             workspace_id=workspace_id,
             filename=filename,
-            file_bytes=clean_text.encode("utf-8"),
+            file_bytes=html_bytes,
             file_type="url",
             source_url=url,
         )

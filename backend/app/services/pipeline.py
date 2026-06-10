@@ -14,6 +14,7 @@ from .parsers import (
     extract_text_from_xlsx,
     extract_text_from_pptx,
 )
+from .web_extract import extract_text_from_html
 
 logger = logging.getLogger("atlaslm.ingestion")
 logger.setLevel(logging.INFO)
@@ -180,7 +181,7 @@ class DocumentPipeline:
 
     # ------------------------------------------------------------------ #
     # Ingestion
-    def _parse(self, file_bytes, file_type, filename):
+    def _parse(self, file_bytes, file_type, filename, source_url=None):
         ft = file_type.lower()
         if ft == "pdf":
             return self.extract_text_from_pdf(file_bytes, filename)
@@ -192,6 +193,9 @@ class DocumentPipeline:
             return extract_text_from_xlsx(file_bytes, filename)
         elif ft == "pptx":
             return extract_text_from_pptx(file_bytes, filename)
+        elif ft == "url":
+            html = file_bytes.decode("utf-8", errors="ignore")
+            return extract_text_from_html(html, source_url or filename)
         else:
             return self.extract_text_from_txt_or_md(file_bytes, filename)
 
@@ -225,7 +229,7 @@ class DocumentPipeline:
 
         logger.info("Worker ingestion start: '%s' (doc %s)", document.filename, document.id)
 
-        pages_data = self._parse(file_bytes, file_type, document.filename)
+        pages_data = self._parse(file_bytes, file_type, document.filename, source_url=getattr(document, "source_url", None))
 
         chunks_data = self.recursive_chunk_text(pages_data)
         if not chunks_data:
@@ -283,7 +287,7 @@ class DocumentPipeline:
             "Ingesting '%s' into workspace %s", filename, workspace_id
         )
 
-        pages_data = self._parse(file_bytes, file_type, filename)
+        pages_data = self._parse(file_bytes, file_type, filename, source_url=source_url)
 
         # 2. Chunk
         chunks_data = self.recursive_chunk_text(

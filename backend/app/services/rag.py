@@ -60,7 +60,7 @@ class RAGService:
         workspace_id: uuid.UUID,
         query: str,
         provider_name: Optional[str] = None,
-        top_k: int = 6,
+        top_k: int = 8,
     ) -> List[Dict[str, Any]]:
         """
         Embeds the query and runs a pgvector cosine search, restricted to
@@ -167,15 +167,19 @@ class RAGService:
             "Your mission is to answer user questions using ONLY the provided sources below.\n\n"
             "=== STRICT RULES ===\n"
             "1. NEVER use knowledge outside the provided source blocks.\n"
-            "2. If the answer is not present in or directly inferable from the sources, "
-            "reply exactly with: 'I could not find that information in the uploaded sources.' "
+            "2. Source blocks may contain STRUCTURED DATA: rows of 'Column: value' pairs "
+            "from spreadsheets and CSV files, table rows, or lists. Scan every line of "
+            "every source block carefully before concluding information is absent. An "
+            "answer buried in the middle of a data block is still an answer.\n"
+            "3. Only if the answer is truly not present in any source block, reply exactly "
+            "with: 'I could not find that information in the uploaded sources.' "
             "Do not invent facts or add general knowledge under any circumstances.\n"
-            "3. Every claim MUST carry the source tag in brackets where the fact was found "
+            "4. Every claim MUST carry the source tag in brackets where the fact was found "
             "(e.g. [source_1] or [source_2]). If multiple sources apply, cite all "
             "(e.g. [source_1][source_3]). Place citations at the end of clauses/sentences.\n"
-            "4. NEVER mention tags that are not in the provided list.\n"
-            "5. No emojis. Use clear, professional formatting.\n"
-            "6. You may use the conversation history to resolve references "
+            "5. NEVER mention tags that are not in the provided list.\n"
+            "6. No emojis. Use clear, professional formatting.\n"
+            "7. You may use the conversation history to resolve references "
             "(e.g. 'that section', 'the second point'), but facts must still come "
             "only from the sources.\n\n"
             f"=== RETRIEVED SOURCES ===\n{context_str}\n"

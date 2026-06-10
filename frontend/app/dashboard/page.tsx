@@ -369,6 +369,7 @@ export default function Dashboard() {
           file_type: doc.file_type,
           created_at: doc.created_at,
           status: doc.status || "ready",
+          error_message: doc.error_message,
         },
         ...prev,
       ]);
@@ -1042,7 +1043,7 @@ export default function Dashboard() {
                       return `Page ${selectedCitation.page_number}`;
                     } else if (fn.endsWith('.pptx')) {
                       return `Slide ${selectedCitation.page_number}`;
-                    } else if (fn.endsWith('.docx') || fn.endsWith('.csv') || fn.endsWith('.xlsx')) {
+                    } else if (fn.endsWith('.docx') || fn.endsWith('.csv') || fn.endsWith('.xlsx') || fn.endsWith(' (web)')) {
                       return `Section ${selectedCitation.page_number}`;
                     } else {
                       return `Page ${selectedCitation.page_number}`; // fallback

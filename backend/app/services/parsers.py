@@ -147,7 +147,7 @@ def extract_text_from_csv(file_bytes: bytes, filename: str) -> List[Dict[str, An
                 col = header[i] if i < len(header) else f"column_{i+1}"
                 pairs.append(f"{col}: {value}")
             if pairs:
-                lines.append(f"Row {start + offset + 1}: " + "; ".join(pairs))
+                lines.append("; ".join(pairs))
         pages.append({"page_number": section, "content": "\n".join(lines)})
         section += 1
 
@@ -244,7 +244,7 @@ def extract_text_from_xlsx(file_bytes: bytes, filename: str) -> List[Dict[str, A
                     col = header[i] if i < len(header) else f"column_{i+1}"
                     pairs.append(f"{col}: {value}")
                 if pairs:
-                    lines.append(f"Row {start + offset + 1}: " + "; ".join(pairs))
+                    lines.append("; ".join(pairs))
             pages.append({"page_number": section, "content": "\n".join(lines)})
             section += 1
 
