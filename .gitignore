@@ -50,6 +50,8 @@ eggs/
 .eggs/
 lib/
 lib64/
+!frontend/lib/
+!frontend/lib/supabaseServer.ts
 parts/
 sdist/
 var/
