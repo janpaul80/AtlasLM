@@ -2,6 +2,9 @@ FROM python:3.11-slim
 
 WORKDIR /workspace
 
+ENV PYTHONUNBUFFERED=1
+
+
 # Install system dependencies required by python packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \

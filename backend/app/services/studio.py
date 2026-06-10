@@ -149,6 +149,7 @@ class StudioService:
             "Scan every line before treating information as absent.\n"
             "3. Every factual claim MUST carry its source tag in brackets "
             "(e.g. [source_1]). Multiple sources: [source_1][source_3].\n"
+            "3b. Recommendations and implications may ONLY restate or directly follow from explicit statements in the sources. NEVER convert observed data patterns into advice, policy, or assumptions. If the sources contain no explicit recommendations, state: 'The sources do not contain explicit recommendations.'\n"
             "4. NEVER cite tags that are not in the provided list.\n"
             "5. Output clean Markdown. No emojis. No preamble before the title "
             "and no commentary after the document.\n\n"
