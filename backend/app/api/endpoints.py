@@ -16,7 +16,7 @@ from ..schemas import (
 )
 from ..services.pipeline import DocumentPipeline
 from ..services.rag import RAGService
-from ..core.providers import provider_registry
+from ..core.providers import provider_registry, ProviderError
 
 router = APIRouter()
 
@@ -155,9 +155,12 @@ async def upload_document(
             filename=filename,
             file_bytes=file_bytes,
             file_type=file_type,
-            provider_name=provider,
         )
         return doc
+    except ProviderError as e:
+        raise HTTPException(status_code=503, detail=e.public_message)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -198,9 +201,12 @@ async def ingest_url(
             file_bytes=clean_text.encode("utf-8"),
             file_type="url",
             source_url=url,
-            provider_name=body.provider or "openrouter",
         )
         return doc
+    except ProviderError as e:
+        raise HTTPException(status_code=503, detail=e.public_message)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -239,9 +245,12 @@ async def ingest_text(
             filename=f"{title} (Pasted Text)",
             file_bytes=file_bytes,
             file_type="text",
-            provider_name=body.provider or "openrouter",
         )
         return doc
+    except ProviderError as e:
+        raise HTTPException(status_code=503, detail=e.public_message)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -357,7 +366,6 @@ async def chat_stream(
             workspace_id=session.workspace_id,
             session_id=session_id,
             user_message=message.content,
-            provider_name=provider,
         ),
         media_type="text/event-stream",
     )

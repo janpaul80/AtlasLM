@@ -13,10 +13,7 @@ class Settings(BaseSettings):
     )
     
     # JWT Fallback Settings
-    JWT_SECRET: str = Field(
-        default="ceb184b89d7d6a91f7a1142d6b21fb5f768ecf3db1be5529c865a20784752db82a67957ec826a8bc3f7fbc67bdccba8ba3e5689500c1e55140d4edbe8636089d",
-        env="JWT_SECRET"
-    )
+    JWT_SECRET: str = Field(..., env="JWT_SECRET")  # required, no default
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
     
@@ -52,6 +49,9 @@ class Settings(BaseSettings):
     # RAG Settings
     DEFAULT_CHUNK_SIZE: int = 800
     DEFAULT_CHUNK_OVERLAP: int = 150
+    
+    # Active engine routing (server-side only; never exposed to clients)
+    ATLAS_ACTIVE_PROVIDER: str = Field(default="langdock", env="ATLAS_ACTIVE_PROVIDER")
     
     class Config:
         case_sensitive = True

@@ -3,124 +3,146 @@ import json
 import logging
 import time
 import re
-from typing import List, Dict, Any, AsyncGenerator, Tuple
-from sqlalchemy.orm import Session
-from sqlalchemy import select, text
-from ..models import DocumentChunk, Document, ChatMessage
-from ..core.providers import provider_registry
+from typing import List, Dict, Any, AsyncGenerator, Tuple, Optional
 
-# Configure logger
+from sqlalchemy.orm import Session
+from sqlalchemy import text
+
+from ..models import ChatMessage, Document
+from ..core.providers import provider_registry, ProviderError
+
 logger = logging.getLogger("atlaslm.rag")
 logger.setLevel(logging.INFO)
-handler = logging.StreamHandler()
-handler.setFormatter(logging.Formatter('[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s'))
+_handler = logging.StreamHandler()
+_handler.setFormatter(
+    logging.Formatter("[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s")
+)
 if not logger.handlers:
-    logger.addHandler(handler)
+    logger.addHandler(_handler)
+
+# How many prior conversation turns to replay to the model.
+HISTORY_TURNS = 6
+
+# Matches [source_12] style tags exactly (used for citation extraction).
+CITATION_TAG_RE = re.compile(r"\[(source_\d+)\]")
+
 
 class RAGService:
     GREETING_PATTERN = re.compile(
-        r"^\s*(hi|hello|hey|yo|howdy|good morning|good afternoon|good evening|thanks|thank you|thx)\s*[!.]*\s*$",
+        r"^\s*(hi|hello|hey|yo|howdy|good morning|good afternoon|good evening|"
+        r"thanks|thank you|thx)\s*[!.]*\s*$",
         re.IGNORECASE,
     )
 
     @classmethod
-    def get_conversational_response(cls, user_message: str) -> str | None:
-        normalized = user_message.strip().lower()
+    def get_conversational_response(cls, user_message: str) -> Optional[str]:
+        normalized = user_message.strip().lower().rstrip("!. ")
         if not normalized:
             return None
-
         if normalized in {"thanks", "thank you", "thx"}:
-            return "You're welcome. I can help you analyze your sources whenever you're ready."
-
+            return (
+                "You're welcome. I can help you analyze your sources "
+                "whenever you're ready."
+            )
         if cls.GREETING_PATTERN.match(user_message):
             return "Hello. How can I help you with your research today?"
-
         return None
 
     def __init__(self, db: Session):
         self.db = db
 
+    # ------------------------------------------------------------------ #
+    # Retrieval
+    # ------------------------------------------------------------------ #
+
     async def retrieve_relevant_chunks(
         self,
         workspace_id: uuid.UUID,
         query: str,
-        provider_name: str = "langdock",
-        top_k: int = 6
+        provider_name: Optional[str] = None,
+        top_k: int = 6,
     ) -> List[Dict[str, Any]]:
         """
-        Calculates search embedding and queries pgvector for the closest chunks within the workspace's documents.
+        Embeds the query and runs a pgvector cosine search, restricted to
+        chunks whose documents were embedded with the SAME embedding model
+        (prevents cross-model vector-space corruption).
         """
-        logger.info(f"Retrieving context for query: '{query[:60]}...' (workspace: {workspace_id})")
+        logger.info(
+            "Retrieving context for query: '%s...' (workspace: %s)",
+            query[:60],
+            workspace_id,
+        )
         start_time = time.time()
-        
-        # 1. Embed query
-        try:
-            embedding_provider = provider_registry.get_embeddings(provider_name)
-            query_vector = await embedding_provider.embed_query(query)
-            embed_duration = time.time() - start_time
-            logger.info(f"Generated search query vector using {provider_name} in {embed_duration:.2f}s")
-        except Exception as e:
-            logger.error(f"Failed to generate search vector for query using {provider_name}: {str(e)}", exc_info=True)
-            raise e
-        
-        # 2. Convert vector to string representation for postgres pgvector matching
+
+        embedding_provider = provider_registry.get_embeddings(provider_name)
+        query_vector = await embedding_provider.embed_query(query)
+        logger.info(
+            "Query vector generated with %s in %.2fs",
+            embedding_provider.model_id,
+            time.time() - start_time,
+        )
+
         vector_str = "[" + ",".join(map(str, query_vector)) + "]"
-        
-        # 3. Write semantic similarity search query matching pgvector cosine distance <=>
+
         db_start = time.time()
-        sql_query = text("""
-            SELECT 
-                dc.id, 
-                dc.content, 
-                dc.page_number, 
-                dc.chunk_index,
-                d.id as document_id, 
-                d.filename,
-                (dc.embedding <=> :query_vector) as distance
+        sql_query = text(
+            """
+            SELECT dc.id, dc.content, dc.page_number, dc.chunk_index,
+                   d.id AS document_id, d.filename,
+                   (dc.embedding <=> :query_vector) AS distance
             FROM document_chunks dc
             JOIN documents d ON dc.document_id = d.id
             WHERE d.workspace_id = :workspace_id
+              AND (d.embedding_model IS NULL OR d.embedding_model = :model_id)
             ORDER BY distance ASC
             LIMIT :top_k
-        """)
-        
-        try:
-            results = self.db.execute(sql_query, {
+            """
+        )
+        results = self.db.execute(
+            sql_query,
+            {
                 "query_vector": vector_str,
                 "workspace_id": workspace_id,
-                "top_k": top_k
-            }).fetchall()
-            db_duration = time.time() - db_start
-            logger.info(f"pgvector query returned {len(results)} matches in {db_duration:.3f}s")
-        except Exception as e:
-            logger.error(f"pgvector Semantic Search Failure: {str(e)}", exc_info=True)
-            raise e
-        
+                "model_id": embedding_provider.model_id,
+                "top_k": top_k,
+            },
+        ).fetchall()
+        logger.info(
+            "pgvector returned %d matches in %.3fs",
+            len(results),
+            time.time() - db_start,
+        )
+
         matched_chunks = []
         for idx, row in enumerate(results):
-            score = 1.0 - float(row[6]) # Cosine similarity score
+            score = 1.0 - float(row[6])
             logger.info(
-                f"Match #{idx+1}: File='{row[5]}', Page={row[2]}, Distance={float(row[6]):.4f} (Score={score:.4f})"
+                "Match #%d: File='%s', Page=%s, Distance=%.4f (Score=%.4f)",
+                idx + 1, row[5], row[2], float(row[6]), score,
             )
-            matched_chunks.append({
-                "chunk_id": row[0],
-                "content": row[1],
-                "page_number": row[2],
-                "chunk_index": row[3],
-                "document_id": row[4],
-                "filename": row[5],
-                "score": score
-            })
-            
+            matched_chunks.append(
+                {
+                    "chunk_id": row[0],
+                    "content": row[1],
+                    "page_number": row[2],
+                    "chunk_index": row[3],
+                    "document_id": row[4],
+                    "filename": row[5],
+                    "score": score,
+                }
+            )
         return matched_chunks
 
-    def construct_system_prompt(self, chunks: List[Dict[str, Any]]) -> Tuple[str, Dict[str, Any]]:
-        """
-        Assembles the grounding system prompt with source documents, providing a mapping dictionary.
-        """
+    # ------------------------------------------------------------------ #
+    # Prompt construction
+    # ------------------------------------------------------------------ #
+
+    def construct_system_prompt(
+        self, chunks: List[Dict[str, Any]]
+    ) -> Tuple[str, Dict[str, Any]]:
         source_mapping = {}
         context_blocks = []
-        
+
         for idx, chunk in enumerate(chunks):
             tag = f"source_{idx + 1}"
             source_mapping[tag] = {
@@ -129,146 +151,202 @@ class RAGService:
                 "document_id": str(chunk["document_id"]),
                 "filename": chunk["filename"],
                 "page_number": chunk["page_number"],
-                "content": chunk["content"]
+                "content": chunk["content"],
             }
-            
             context_blocks.append(
-                f"--- START SOURCE {tag} (File: {chunk['filename']}, Page: {chunk['page_number']}) ---\n"
+                f"--- START SOURCE {tag} "
+                f"(File: {chunk['filename']}, Page: {chunk['page_number']}) ---\n"
                 f"{chunk['content']}\n"
                 f"--- END SOURCE {tag} ---"
             )
-            
+
         context_str = "\n\n".join(context_blocks)
-        
+
         system_prompt = (
-            "You are AtlasLM, a highly professional, strictly source-grounded research AI assistant.\n"
-            "Your singular mission is to answer user questions using ONLY the provided sources below.\n\n"
-            "=== STRICTOR RULES ===\n"
-            "1. NEVER hallucinate or use any knowledge outside the provided source blocks.\n"
-            "2. If the answer is not fully present or cannot be directly inferred from the sources, "
+            "You are AtlasLM, a professional, strictly source-grounded research assistant.\n"
+            "Your mission is to answer user questions using ONLY the provided sources below.\n\n"
+            "=== STRICT RULES ===\n"
+            "1. NEVER use knowledge outside the provided source blocks.\n"
+            "2. If the answer is not present in or directly inferable from the sources, "
             "reply exactly with: 'I could not find that information in the uploaded sources.' "
-            "Do not make up facts or add general web knowledge under any circumstances.\n"
-            "3. For every claim you make or sentence you write, you MUST attach the source tag identifier "
-            "in brackets representing where you found the facts (e.g. [source_1] or [source_2]). "
-            "If multiple sources apply, cite all (e.g. [source_1][source_3]). Cite at the end of clauses/sentences.\n"
-            "4. NEVER mention tags that are not explicitly provided in the list.\n"
-            "5. NO emojis. Use professional, clear engineering formatting.\n\n"
+            "Do not invent facts or add general knowledge under any circumstances.\n"
+            "3. Every claim MUST carry the source tag in brackets where the fact was found "
+            "(e.g. [source_1] or [source_2]). If multiple sources apply, cite all "
+            "(e.g. [source_1][source_3]). Place citations at the end of clauses/sentences.\n"
+            "4. NEVER mention tags that are not in the provided list.\n"
+            "5. No emojis. Use clear, professional formatting.\n"
+            "6. You may use the conversation history to resolve references "
+            "(e.g. 'that section', 'the second point'), but facts must still come "
+            "only from the sources.\n\n"
             f"=== RETRIEVED SOURCES ===\n{context_str}\n"
         )
-        
-        logger.info(f"Grounded prompt constructed with {len(chunks)} context sources.")
+        logger.info("Grounded prompt constructed with %d context sources.", len(chunks))
         return system_prompt, source_mapping
+
+    def _load_history_messages(self, session_id: uuid.UUID) -> List[dict]:
+        """Loads the last HISTORY_TURNS*2 messages for conversational context."""
+        rows = (
+            self.db.query(ChatMessage)
+            .filter(ChatMessage.session_id == session_id)
+            .order_by(ChatMessage.created_at.desc())
+            .limit(HISTORY_TURNS * 2)
+            .all()
+        )
+        history = []
+        for msg in reversed(rows):
+            role = "assistant" if msg.role == "assistant" else "user"
+            # Strip citation tags from prior assistant turns to keep them
+            # from confusing the model about the CURRENT source numbering.
+            content = CITATION_TAG_RE.sub("", msg.content)
+            history.append({"role": role, "content": content})
+        return history
+
+    # ------------------------------------------------------------------ #
+    # Main streaming entry point
+    # ------------------------------------------------------------------ #
 
     async def execute_rag_chat_stream(
         self,
         workspace_id: uuid.UUID,
         session_id: uuid.UUID,
         user_message: str,
-        provider_name: str = "langdock"
+        provider_name: Optional[str] = None,
     ) -> AsyncGenerator[str, None]:
-        """
-        Coordinates RAG semantic retrieval and streams the grounded answer alongside citation metadata.
-        """
-        logger.info(f"Starting RAG chat stream for session: {session_id} in workspace: {workspace_id}")
-        
-        # 1. Save user message to database
-        user_msg_record = ChatMessage(
-            id=uuid.uuid4(),
-            session_id=session_id,
-            role="user",
-            content=user_message
+        logger.info(
+            "Starting RAG chat stream for session %s in workspace %s",
+            session_id, workspace_id,
         )
-        self.db.add(user_msg_record)
+
+        # Load history BEFORE saving the new user message (so it isn't doubled).
+        history = self._load_history_messages(session_id)
+
+        # 1. Persist user message
+        self.db.add(
+            ChatMessage(
+                id=uuid.uuid4(),
+                session_id=session_id,
+                role="user",
+                content=user_message,
+            )
+        )
         self.db.commit()
 
-        # 2. Lightweight conversational mode for greetings/thanks
+        # 2. Conversational fast-path (greetings/thanks)
         conversational_response = self.get_conversational_response(user_message)
         if conversational_response:
-            yield f"event: data\ndata: {json.dumps({'type': 'chunk', 'content': conversational_response})}\n\n"
-            assistant_msg = ChatMessage(
-                id=uuid.uuid4(),
-                session_id=session_id,
-                role="assistant",
-                content=conversational_response,
-                citations=[]
-            )
-            self.db.add(assistant_msg)
-            self.db.commit()
+            yield self._sse("data", {"type": "chunk", "content": conversational_response})
+            self._save_assistant(session_id, conversational_response, [])
             yield "event: end\ndata: [DONE]\n\n"
             return
 
-        # 3. Retrieve semantic context
+        # 3. Empty-workspace guard (proper UX instead of grounding failure text)
+        doc_count = (
+            self.db.query(Document)
+            .filter(Document.workspace_id == workspace_id)
+            .count()
+        )
+        if doc_count == 0:
+            msg = (
+                "You haven't added any sources to this notebook yet. "
+                "Upload a document, paste text, or add a website URL, "
+                "and I'll answer questions grounded in your sources."
+            )
+            yield self._sse("data", {"type": "chunk", "content": msg})
+            self._save_assistant(session_id, msg, [])
+            yield "event: end\ndata: [DONE]\n\n"
+            return
+
+        # 4. Retrieval
         try:
-            chunks = await self.retrieve_relevant_chunks(workspace_id, user_message, provider_name)
-        except Exception as e:
-            logger.error(f"RAG Aborted: Retrieval failed for session {session_id}: {str(e)}")
-            yield f"event: error\ndata: {json.dumps({'error': 'Failed to retrieve context source chunks.'})}\n\n"
-            return
-        
-        if not chunks:
-            logger.warning(f"Grounding Failure: No sources available for workspace {workspace_id}. Replying with grounding fallback.")
-            no_sources_resp = "I could not find that information in the uploaded sources (no documents ingested)."
-            yield f"event: data\ndata: {json.dumps({'type': 'chunk', 'content': no_sources_resp})}\n\n"
-            
-            assistant_msg = ChatMessage(
-                id=uuid.uuid4(),
-                session_id=session_id,
-                role="assistant",
-                content=no_sources_resp,
-                citations=[]
+            chunks = await self.retrieve_relevant_chunks(
+                workspace_id, user_message, provider_name
             )
-            self.db.add(assistant_msg)
-            self.db.commit()
+        except ProviderError as e:
+            yield self._sse("error", {"error": e.public_message})
+            return
+        except Exception as e:
+            logger.error("Retrieval failed: %s", e, exc_info=True)
+            yield self._sse(
+                "error",
+                {"error": "AtlasLM could not search your sources right now. Please try again."},
+            )
+            return
+
+        if not chunks:
+            msg = "I could not find that information in the uploaded sources."
+            yield self._sse("data", {"type": "chunk", "content": msg})
+            self._save_assistant(session_id, msg, [])
             yield "event: end\ndata: [DONE]\n\n"
             return
 
-        # 3. Construct system prompt & source maps
+        # 5. Prompt + citation metadata
         system_prompt, source_mapping = self.construct_system_prompt(chunks)
-        
-        # Send citation map metadata to frontend first
-        yield f"event: metadata\ndata: {json.dumps({'type': 'metadata', 'sources': source_mapping})}\n\n"
-        
-        # 4. Stream response from LLM
+        yield self._sse("metadata", {"type": "metadata", "sources": source_mapping})
+
+        # 6. Build full message list: system + history + current question
+        messages = [{"role": "system", "content": system_prompt}]
+        messages.extend(history)
+        messages.append({"role": "user", "content": user_message})
+
+        # 7. Stream the answer
+        full_content = ""
         try:
             llm = provider_registry.get_llm(provider_name)
-            full_content = ""
             stream_start = time.time()
             chunk_count = 0
-            
-            logger.info(f"Requesting completions stream from {provider_name}...")
-            async for chunk in llm.generate_stream(user_message, system_prompt):
-                full_content += chunk
+            async for piece in llm.generate_stream(messages):
+                full_content += piece
                 chunk_count += 1
-                yield f"event: data\ndata: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
-            
-            stream_duration = time.time() - stream_start
-            logger.info(f"Stream finished. Delivered {chunk_count} tokens in {stream_duration:.2f}s using {provider_name}")
-        except Exception as e:
-            logger.error(f"LLM Provider Stream Error: {str(e)}", exc_info=True)
-            yield f"event: error\ndata: {json.dumps({'error': f'Model streaming failed: {str(e)}'})}\n\n"
-            return
-            
-        # 5. Extract citations actually used in the text to persist in database
-        used_citations = []
-        for tag, details in source_mapping.items():
-            if tag in full_content:
-                used_citations.append(details)
-        logger.info(f"User response verified grounded. Verified {len(used_citations)} active source citations.")
-                
-        # 6. Save assistant message and actual citations to database
-        try:
-            assistant_msg = ChatMessage(
-                id=uuid.uuid4(),
-                session_id=session_id,
-                role="assistant",
-                content=full_content,
-                citations=used_citations
+                yield self._sse("data", {"type": "chunk", "content": piece})
+            logger.info(
+                "Stream finished: %d chunks in %.2fs",
+                chunk_count, time.time() - stream_start,
             )
-            self.db.add(assistant_msg)
+        except ProviderError as e:
+            yield self._sse("error", {"error": e.public_message})
+            return
+        except Exception as e:
+            logger.error("LLM stream error: %s", e, exc_info=True)
+            yield self._sse(
+                "error",
+                {"error": "AtlasLM could not complete the response. Please try again."},
+            )
+            return
+
+        # 8. Extract citations actually used (exact tag matching, no
+        #    source_1/source_10 substring collisions).
+        used_tags = set(CITATION_TAG_RE.findall(full_content))
+        used_citations = [
+            details for tag, details in source_mapping.items() if tag in used_tags
+        ]
+        logger.info("Verified %d active source citations.", len(used_citations))
+
+        # 9. Persist assistant message
+        self._save_assistant(session_id, full_content, used_citations)
+        yield "event: end\ndata: [DONE]\n\n"
+
+    # ------------------------------------------------------------------ #
+    # Helpers
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _sse(event: str, payload: dict) -> str:
+        return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
+
+    def _save_assistant(
+        self, session_id: uuid.UUID, content: str, citations: List[dict]
+    ):
+        try:
+            self.db.add(
+                ChatMessage(
+                    id=uuid.uuid4(),
+                    session_id=session_id,
+                    role="assistant",
+                    content=content,
+                    citations=citations,
+                )
+            )
             self.db.commit()
-            logger.info(f"Persisted assistant chat completion with {len(used_citations)} citations.")
         except Exception as e:
             self.db.rollback()
-            logger.error(f"Failed to save assistant chat message log: {str(e)}")
-        
-        yield "event: end\ndata: [DONE]\n\n"
+            logger.error("Failed to persist assistant message: %s", e)

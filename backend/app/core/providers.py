@@ -1,29 +1,86 @@
+"""
+AtlasLM Engine provider layer.
+
+Design rules enforced here:
+  1. FAIL FAST  - embedding failures RAISE. We never fabricate zero vectors,
+                  because storing fake vectors silently corrupts retrieval.
+  2. NO LEAKAGE - exceptions raised to callers are wrapped in ProviderError with
+                  sanitized, AtlasLM-branded messages. Raw provider names/URLs
+                  never reach the client.
+  3. POOLING    - one shared httpx.AsyncClient per provider instance
+                  (connection reuse = lower latency).
+"""
+
 import httpx
 import json
-from typing import List, AsyncGenerator
+import logging
+from typing import List, AsyncGenerator, Optional
+
 from .config import settings
 
+logger = logging.getLogger("atlaslm.providers")
+
+
+class ProviderError(Exception):
+    """Sanitized error safe to surface to API clients."""
+
+    def __init__(self, public_message: str, internal_detail: str = ""):
+        super().__init__(public_message)
+        self.public_message = public_message
+        # Internal detail goes to server logs ONLY - never to the client.
+        if internal_detail:
+            logger.error("Provider failure (internal): %s", internal_detail)
+
+
+# Shared connection limits for all clients
+_HTTP_LIMITS = httpx.Limits(max_keepalive_connections=10, max_connections=20)
+
+
 class EmbeddingProvider:
+    #: dimension of vectors this provider emits (DB column is Vector(1536))
+    dimensions: int = 1536
+    #: model identifier persisted per-document so we never mix vector spaces
+    model_id: str = "unknown"
+
     async def embed_query(self, text: str) -> List[float]:
         raise NotImplementedError
-        
+
     async def embed_documents(self, texts: List[str]) -> List[List[float]]:
         raise NotImplementedError
+
+    async def aclose(self):
+        pass
+
 
 class LLMProvider:
     async def generate(self, prompt: str, system_prompt: str = "") -> str:
         raise NotImplementedError
-        
-    async def generate_stream(self, prompt: str, system_prompt: str = "") -> AsyncGenerator[str, None]:
+
+    async def generate_stream(
+        self, messages: List[dict]
+    ) -> AsyncGenerator[str, None]:
+        """messages: full OpenAI-style message list (system + history + user)."""
         raise NotImplementedError
 
-# --- Embedding Implementations ---
+    async def aclose(self):
+        pass
+
+
+# ---------------------------------------------------------------------------
+# Embedding implementations
+# ---------------------------------------------------------------------------
 
 class OpenAICompatibleEmbedding(EmbeddingProvider):
     def __init__(self, base_url: str, api_key: str, model: str = "text-embedding-3-small"):
-        self.base_url = base_url.rstrip('/')
+        self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model
+        self.model_id = model
+        self.dimensions = 1536
+        self._client = httpx.AsyncClient(limits=_HTTP_LIMITS, timeout=30.0)
+
+    async def aclose(self):
+        await self._client.aclose()
 
     async def embed_query(self, text: str) -> List[float]:
         res = await self.embed_documents([text])
@@ -31,279 +88,315 @@ class OpenAICompatibleEmbedding(EmbeddingProvider):
 
     async def embed_documents(self, texts: List[str]) -> List[List[float]]:
         if not self.api_key:
-            # Fallback mock/random vector to prevent crash during development if no key
-            print("WARNING: No API key for Embedding Provider! Returning mock vectors.")
-            return [[0.0] * 1536 for _ in texts]
-            
-        async with httpx.AsyncClient() as client:
-            headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
-            payload = {"input": texts, "model": self.model}
-            try:
-                response = await client.post(
-                    f"{self.base_url}/embeddings",
-                    headers=headers,
-                    json=payload,
-                    timeout=30.0
-                )
-                response.raise_for_status()
-                data = response.json()
-                # If embeddings returned successfully, parse them
-                return [item["embedding"] for item in data["data"]]
-            except Exception as e:
-                print(f"Error calling embedding API: {e}")
-                # Return standard padded vector as fallback
-                return [[0.0] * 1536 for _ in texts]
+            # FAIL FAST: a missing key must surface as an error, not mock vectors.
+            raise ProviderError(
+                "The AtlasLM engine is not configured. Please contact your administrator.",
+                internal_detail=f"No API key configured for embedding endpoint {self.base_url}",
+            )
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {"input": texts, "model": self.model}
+        try:
+            response = await self._client.post(
+                f"{self.base_url}/embeddings", headers=headers, json=payload
+            )
+            response.raise_for_status()
+            data = response.json()
+            vectors = [item["embedding"] for item in data["data"]]
+        except ProviderError:
+            raise
+        except Exception as exc:
+            raise ProviderError(
+                "The AtlasLM engine could not process this content right now. Please try again.",
+                internal_detail=f"Embedding call failed ({self.base_url}): {exc!r}",
+            ) from exc
+
+        if len(vectors) != len(texts):
+            raise ProviderError(
+                "The AtlasLM engine returned an incomplete result. Please try again.",
+                internal_detail=f"Embedding count mismatch: sent {len(texts)}, got {len(vectors)}",
+            )
+        return vectors
+
 
 class OllamaEmbedding(EmbeddingProvider):
     def __init__(self, base_url: str, model: str = "nomic-embed-text"):
-        self.base_url = base_url.rstrip('/')
+        self.base_url = base_url.rstrip("/")
         self.model = model
+        self.model_id = f"ollama/{model}"
+        # nomic-embed-text is 768-dim; we pad to the 1536 column size.
+        # Padding is consistent ONLY within this model space - which is why
+        # model_id is persisted per document and enforced at query time.
+        self.dimensions = 1536
+        self._client = httpx.AsyncClient(limits=_HTTP_LIMITS, timeout=30.0)
+
+    async def aclose(self):
+        await self._client.aclose()
 
     async def embed_query(self, text: str) -> List[float]:
         res = await self.embed_documents([text])
         return res[0]
 
     async def embed_documents(self, texts: List[str]) -> List[List[float]]:
-        async with httpx.AsyncClient() as client:
-            embeddings = []
-            for text in texts:
-                try:
-                    payload = {"model": self.model, "prompt": text}
-                    response = await client.post(
-                        f"{self.base_url}/api/embeddings",
-                        json=payload,
-                        timeout=10.0
-                    )
-                    response.raise_for_status()
-                    data = response.json()
-                    vector = data["embedding"]
-                    # Pad or truncate to 1536 dimension for schema consistency
-                    if len(vector) < 1536:
-                        vector = vector + [0.0] * (1536 - len(vector))
-                    elif len(vector) > 1536:
-                        vector = vector[:1536]
-                    embeddings.append(vector)
-                except Exception as e:
-                    print(f"Ollama embedding error: {e}")
-                    embeddings.append([0.0] * 1536)
-            return embeddings
+        embeddings: List[List[float]] = []
+        for text in texts:
+            try:
+                response = await self._client.post(
+                    f"{self.base_url}/api/embeddings",
+                    json={"model": self.model, "prompt": text},
+                )
+                response.raise_for_status()
+                vector = response.json()["embedding"]
+            except Exception as exc:
+                # FAIL FAST - do not append a zero vector.
+                raise ProviderError(
+                    "The local AtlasLM engine is unavailable. Please verify it is running.",
+                    internal_detail=f"Ollama embedding failed ({self.base_url}): {exc!r}",
+                ) from exc
+            if len(vector) < 1536:
+                vector = vector + [0.0] * (1536 - len(vector))
+            elif len(vector) > 1536:
+                vector = vector[:1536]
+            embeddings.append(vector)
+        return embeddings
 
-# --- LLM Implementations ---
+
+# ---------------------------------------------------------------------------
+# LLM implementations
+# ---------------------------------------------------------------------------
 
 class OpenAICompatibleLLM(LLMProvider):
     def __init__(self, base_url: str, api_key: str, model: str):
-        self.base_url = base_url.rstrip('/')
+        self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model
+        self._client = httpx.AsyncClient(limits=_HTTP_LIMITS, timeout=90.0)
+
+    async def aclose(self):
+        await self._client.aclose()
+
+    def _headers(self):
+        return {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
 
     async def generate(self, prompt: str, system_prompt: str = "") -> str:
-        async with httpx.AsyncClient() as client:
-            headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
-            messages = []
-            if system_prompt:
-                messages.append({"role": "system", "content": system_prompt})
-            messages.append({"role": "user", "content": prompt})
-            
-            payload = {
-                "model": self.model,
-                "messages": messages,
-                "temperature": 0.1, # Keep it highly precise for grounded RAG
-            }
-            try:
-                response = await client.post(
-                    f"{self.base_url}/chat/completions",
-                    headers=headers,
-                    json=payload,
-                    timeout=60.0
-                )
-                response.raise_for_status()
-                data = response.json()
-                return data["choices"][0]["message"]["content"]
-            except Exception as e:
-                print(f"LLM API generation error: {e}")
-                return "Error contacting the LLM API provider."
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+        payload = {"model": self.model, "messages": messages, "temperature": 0.1}
+        try:
+            response = await self._client.post(
+                f"{self.base_url}/chat/completions",
+                headers=self._headers(),
+                json=payload,
+            )
+            response.raise_for_status()
+            return response.json()["choices"][0]["message"]["content"]
+        except Exception as exc:
+            raise ProviderError(
+                "The AtlasLM engine could not generate a response. Please try again.",
+                internal_detail=f"LLM generate failed ({self.base_url}): {exc!r}",
+            ) from exc
 
-    async def generate_stream(self, prompt: str, system_prompt: str = "") -> AsyncGenerator[str, None]:
-        async with httpx.AsyncClient() as client:
-            headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
-            messages = []
-            if system_prompt:
-                messages.append({"role": "system", "content": system_prompt})
-            messages.append({"role": "user", "content": prompt})
-            
-            payload = {
-                "model": self.model,
-                "messages": messages,
-                "temperature": 0.1,
-                "stream": True
-            }
-            
-            try:
-                async with client.stream(
-                    "POST",
-                    f"{self.base_url}/chat/completions",
-                    headers=headers,
-                    json=payload,
-                    timeout=60.0
-                ) as response:
-                    response.raise_for_status()
-                    async for line in response.aiter_lines():
-                        if not line:
-                            continue
-                        if line.startswith("data: "):
-                            data_str = line[6:].strip()
-                            if data_str == "[DONE]":
-                                break
-                            try:
-                                chunk = json.loads(data_str)
-                                delta = chunk["choices"][0]["delta"]
-                                if "content" in delta:
-                                    yield delta["content"]
-                            except Exception:
-                                continue
-            except Exception as e:
-                print(f"LLM API streaming error: {e}")
-                yield f"Error during streaming generation: {e}"
+    async def generate_stream(
+        self, messages: List[dict]
+    ) -> AsyncGenerator[str, None]:
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": 0.1,
+            "stream": True,
+        }
+        try:
+            async with self._client.stream(
+                "POST",
+                f"{self.base_url}/chat/completions",
+                headers=self._headers(),
+                json=payload,
+            ) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line or not line.startswith("data: "):
+                        continue
+                    data_str = line[6:].strip()
+                    if data_str == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data_str)
+                        delta = chunk["choices"][0]["delta"]
+                        if "content" in delta and delta["content"]:
+                            yield delta["content"]
+                    except (json.JSONDecodeError, KeyError, IndexError):
+                        continue
+        except ProviderError:
+            raise
+        except Exception as exc:
+            # RAISE, never yield error text into the user's chat transcript.
+            raise ProviderError(
+                "The AtlasLM engine connection was interrupted. Please try again.",
+                internal_detail=f"LLM stream failed ({self.base_url}): {exc!r}",
+            ) from exc
+
 
 class OllamaLLM(LLMProvider):
     def __init__(self, base_url: str, model: str = "llama3"):
-        self.base_url = base_url.rstrip('/')
+        self.base_url = base_url.rstrip("/")
         self.model = model
+        self._client = httpx.AsyncClient(limits=_HTTP_LIMITS, timeout=120.0)
+
+    async def aclose(self):
+        await self._client.aclose()
 
     async def generate(self, prompt: str, system_prompt: str = "") -> str:
-        async with httpx.AsyncClient() as client:
-            payload = {
-                "model": self.model,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt}
-                ],
-                "options": {"temperature": 0.1},
-                "stream": False
-            }
-            try:
-                response = await client.post(
-                    f"{self.base_url}/api/chat",
-                    json=payload,
-                    timeout=60.0
-                )
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt},
+            ],
+            "options": {"temperature": 0.1},
+            "stream": False,
+        }
+        try:
+            response = await self._client.post(f"{self.base_url}/api/chat", json=payload)
+            response.raise_for_status()
+            return response.json()["message"]["content"]
+        except Exception as exc:
+            raise ProviderError(
+                "The local AtlasLM engine is unavailable. Please verify it is running.",
+                internal_detail=f"Ollama generate failed ({self.base_url}): {exc!r}",
+            ) from exc
+
+    async def generate_stream(
+        self, messages: List[dict]
+    ) -> AsyncGenerator[str, None]:
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "options": {"temperature": 0.1},
+            "stream": True,
+        }
+        try:
+            async with self._client.stream(
+                "POST", f"{self.base_url}/api/chat", json=payload
+            ) as response:
                 response.raise_for_status()
-                data = response.json()
-                return data["message"]["content"]
-            except Exception as e:
-                print(f"Ollama generation error: {e}")
-                return "Error contacting Ollama model on the server."
+                async for line in response.aiter_lines():
+                    if not line:
+                        continue
+                    try:
+                        chunk = json.loads(line)
+                        content = chunk.get("message", {}).get("content", "")
+                        if content:
+                            yield content
+                    except json.JSONDecodeError:
+                        continue
+        except ProviderError:
+            raise
+        except Exception as exc:
+            raise ProviderError(
+                "The local AtlasLM engine connection was interrupted.",
+                internal_detail=f"Ollama stream failed ({self.base_url}): {exc!r}",
+            ) from exc
 
-    async def generate_stream(self, prompt: str, system_prompt: str = "") -> AsyncGenerator[str, None]:
-        async with httpx.AsyncClient() as client:
-            payload = {
-                "model": self.model,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt}
-                ],
-                "options": {"temperature": 0.1},
-                "stream": True
-            }
-            try:
-                async with client.stream(
-                    "POST",
-                    f"{self.base_url}/api/chat",
-                    json=payload,
-                    timeout=60.0
-                ) as response:
-                    response.raise_for_status()
-                    async for line in response.aiter_lines():
-                        if not line:
-                            continue
-                        try:
-                            chunk = json.loads(line)
-                            yield chunk["message"]["content"]
-                        except Exception:
-                            continue
-            except Exception as e:
-                print(f"Ollama streaming error: {e}")
-                yield f"Ollama streaming error: {e}"
 
-# --- Provider Registry ---
+# ---------------------------------------------------------------------------
+# Provider registry
+# ---------------------------------------------------------------------------
 
 class ProviderRegistry:
+    """
+    Server-side provider routing. Clients NEVER pick a provider; routing is
+    controlled by ATLAS_* settings only. Internal keys are never exposed.
+    """
+
     def __init__(self):
         self._llms = {}
         self._embeddings = {}
-        
-        # 1. Initialize Langdock (using OpenAI Compatible endpoint)
+
         if settings.LANGDOCK_API_KEY:
             self._llms["langdock"] = OpenAICompatibleLLM(
                 base_url=settings.LANGDOCK_ENDPOINT_URL,
                 api_key=settings.LANGDOCK_API_KEY,
-                model="gpt-4o" # default model mapping or custom
+                model="gpt-4o",
             )
             self._embeddings["langdock"] = OpenAICompatibleEmbedding(
                 base_url=settings.LANGDOCK_ENDPOINT_URL,
                 api_key=settings.LANGDOCK_API_KEY,
-                model="text-embedding-3-small"
+                model="text-embedding-ada-002",
             )
-            
-        # 2. Initialize Blackbox AI
+
         if settings.BLACKBOX_API_KEY:
             self._llms["blackbox"] = OpenAICompatibleLLM(
                 base_url="https://api.blackbox.ai/api/v1",
                 api_key=settings.BLACKBOX_API_KEY,
-                model="blackboxai"
+                model="blackboxai",
             )
-            
-        # 3. Initialize OpenRouter
+
         if settings.OPENROUTER_API_KEY:
             self._llms["openrouter"] = OpenAICompatibleLLM(
                 base_url=settings.OPENROUTER_ENDPOINT_URL,
                 api_key=settings.OPENROUTER_API_KEY,
-                model=settings.OPENROUTER_MODEL
+                model=settings.OPENROUTER_MODEL,
             )
             self._embeddings["openrouter"] = OpenAICompatibleEmbedding(
                 base_url=settings.OPENROUTER_ENDPOINT_URL,
                 api_key=settings.OPENROUTER_API_KEY,
-                model="text-embedding-3-small"
+                model="text-embedding-3-small",
             )
 
-        # 4. Initialize Ollama
-        self._llms["ollama"] = OllamaLLM(
-            base_url=settings.OLLAMA_ENDPOINT_URL,
-            model="llama3"
-        )
-        self._embeddings["ollama"] = OllamaEmbedding(
-            base_url=settings.OLLAMA_ENDPOINT_URL,
-            model="nomic-embed-text"
-        )
-        
-        # 5. Direct OpenAI fallbacks
         if settings.OPENAI_API_KEY:
             self._llms["openai"] = OpenAICompatibleLLM(
                 base_url="https://api.openai.com/v1",
                 api_key=settings.OPENAI_API_KEY,
-                model="gpt-4o"
+                model="gpt-4o",
             )
             self._embeddings["openai"] = OpenAICompatibleEmbedding(
                 base_url="https://api.openai.com/v1",
                 api_key=settings.OPENAI_API_KEY,
-                model="text-embedding-3-small"
+                model="text-embedding-3-small",
             )
 
-    def get_llm(self, provider_name: str = "langdock") -> LLMProvider:
-        # Fallback sequence: requested provider -> first available -> ollama as offline fallback
-        if provider_name in self._llms:
-            return self._llms[provider_name]
-        for name in ["langdock", "openrouter", "openai", "blackbox"]:
-            if name in self._llms:
-                return self._llms[name]
-        return self._llms["ollama"]
+        # Ollama is always registered as the offline fallback.
+        self._llms["ollama"] = OllamaLLM(
+            base_url=settings.OLLAMA_ENDPOINT_URL, model="llama3"
+        )
+        self._embeddings["ollama"] = OllamaEmbedding(
+            base_url=settings.OLLAMA_ENDPOINT_URL, model="nomic-embed-text"
+        )
 
-    def get_embeddings(self, provider_name: str = "langdock") -> EmbeddingProvider:
-        if provider_name in self._embeddings:
-            return self._embeddings[provider_name]
-        for name in ["langdock", "openrouter", "openai"]:
-            if name in self._embeddings:
-                return self._embeddings[name]
-        return self._embeddings["ollama"]
+    # -- server-side routing -------------------------------------------------
+
+    def _resolve(self, table: dict, preferred: Optional[str]) -> str:
+        order = [
+            preferred or settings.ATLAS_ACTIVE_PROVIDER,
+            "langdock",
+            "openrouter",
+            "openai",
+            "blackbox",
+            "ollama",
+        ]
+        for name in order:
+            if name and name in table:
+                return name
+        raise ProviderError(
+            "No AtlasLM engine is configured. Please contact your administrator.",
+            internal_detail="Provider registry is empty for the requested capability.",
+        )
+
+    def get_llm(self, provider_name: Optional[str] = None) -> LLMProvider:
+        return self._llms[self._resolve(self._llms, provider_name)]
+
+    def get_embeddings(self, provider_name: Optional[str] = None) -> EmbeddingProvider:
+        return self._embeddings[self._resolve(self._embeddings, provider_name)]
+
+    def get_active_embedding_model_id(self) -> str:
+        return self.get_embeddings().model_id
+
 
 provider_registry = ProviderRegistry()
