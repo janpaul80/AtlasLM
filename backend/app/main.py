@@ -1,61 +1,74 @@
+import logging
+
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
+
 from .core.config import settings
 from .core.database import engine, Base
 from .api.endpoints import router as api_router
-from sqlalchemy import text
+from .middleware.auth_middleware import AuthMiddleware
 
-# Enable pgvector extension before table creation.
-# Runs every startup - safe on already-enabled extensions.
+logger = logging.getLogger(__name__)
+
 try:
+    # Enable pgvector BEFORE SQLAlchemy creates VECTOR columns.
     with engine.connect() as conn:
-        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
         conn.commit()
-    print("pgvector extension enabled.")
-except Exception as e:
-    print(f"WARNING: Could not enable pgvector extension: {e}")
 
-# Initialize tables if not already present
-try:
-    from . import models
+        res = conn.execute(
+            text("SELECT extname FROM pg_extension WHERE extname='vector'")
+        ).fetchone()
+        if not res:
+            raise RuntimeError("pgvector extension 'vector' not present after CREATE EXTENSION")
+
+    # Import models to register them with metadata.
+    from . import models  # noqa: F401
+
     Base.metadata.create_all(bind=engine)
-    print("Database tables initialized successfully.")
+    logger.info("Database tables initialized successfully (pgvector vector enabled).")
 except Exception as e:
-    print(f"WARNING: Could not connect to database or create tables: {e}")
+    logger.exception(f"FATAL: Could not connect to database / enable pgvector / create tables: {e}")
+    raise
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
-    openapi_url="/openapi.json"
+    openapi_url="/openapi.json",
 )
 
-# CORS - allows Next.js dev, port 3010, and production domain
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
         "http://localhost:3010",
         "https://atlaslm.cloud",
-        "https://www.atlaslm.cloud"
+        "https://www.atlaslm.cloud",
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+app.add_middleware(AuthMiddleware)
+
 app.include_router(api_router, prefix=settings.API_V1_STR)
+
 
 @app.get("/", tags=["system"])
 def read_root():
     return {
         "status": "healthy",
         "project": settings.PROJECT_NAME,
-        "docs_url": "/docs"
+        "docs_url": "/docs",
     }
+
 
 @app.get("/health", tags=["system"])
 async def health_check():
-    return {"status": "ok"}
+    return {"status": "healthy"}
+
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

@@ -25,10 +25,9 @@ const getSafeRedirectOrigin = (request: NextRequest, requestedOrigin: string | n
     const parsedRequestOrigin = new URL(requestOrigin)
     const sameHost = parsedRequestedOrigin.hostname === parsedRequestOrigin.hostname
     const sameProtocol = parsedRequestedOrigin.protocol === parsedRequestOrigin.protocol
-    const localhostPair = parsedRequestedOrigin.hostname === 'localhost' && parsedRequestOrigin.hostname === 'localhost'
+    const localhostPair =
+      parsedRequestedOrigin.hostname === 'localhost' && parsedRequestOrigin.hostname === 'localhost'
 
-    // For local development, always keep callback redirects on the current request origin
-    // to avoid stale localhost port mismatches (e.g. 3010 vs 3000).
     if (localhostPair) {
       return parsedRequestOrigin.origin
     }
@@ -43,31 +42,28 @@ const getSafeRedirectOrigin = (request: NextRequest, requestedOrigin: string | n
   return requestOrigin
 }
 
-const redirectTo = (request: NextRequest, path: string, origin?: string) => {
-  return NextResponse.redirect(new URL(path, origin || getRequestOrigin(request)))
-}
-
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = request.nextUrl
-    const code = searchParams.get('code')
-    const redirectOrigin = getSafeRedirectOrigin(request, searchParams.get('redirect_origin'))
-
-    if (!code) {
-      return redirectTo(request, '/login?error=missing_code', redirectOrigin)
-    }
+    const redirectOrigin = getSafeRedirectOrigin(request, request.nextUrl.searchParams.get('redirect_origin'))
+    const callbackUrl = new URL('/auth/callback', redirectOrigin)
+    callbackUrl.searchParams.set('redirect_origin', redirectOrigin)
 
     const supabase = await supabaseServer()
-    const { error } = await supabase.auth.exchangeCodeForSession(code)
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: callbackUrl.toString(),
+      },
+    })
 
-    if (error) {
-      console.error('OAuth callback error:', error)
-      return redirectTo(request, '/login?error=auth_callback_failed', redirectOrigin)
+    if (error || !data.url) {
+      console.error('Google OAuth start error:', error)
+      return NextResponse.redirect(new URL('/login?error=oauth_start_failed', redirectOrigin))
     }
 
-    return redirectTo(request, '/dashboard', redirectOrigin)
+    return NextResponse.redirect(data.url)
   } catch (err) {
-    console.error('Callback exception:', err)
-    return redirectTo(request, '/login?error=auth_callback_failed')
+    console.error('Google OAuth route exception:', err)
+    return NextResponse.redirect(new URL('/login?error=oauth_start_failed', getRequestOrigin(request)))
   }
 }

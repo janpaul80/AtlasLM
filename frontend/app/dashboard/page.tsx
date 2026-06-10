@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import Logo from "../../components/brand/logo";
+import { apiClient } from "@/lib/apiClient";
 
 interface Workspace {
   id: string;
@@ -17,6 +18,8 @@ interface DocumentSource {
   created_at: string;
   status: "parsing" | "embedding" | "grounded" | "failed";
 }
+
+type SourceTab = "files" | "website" | "youtube" | "audio" | "image" | "paste";
 
 interface Message {
   id: string;
@@ -35,7 +38,10 @@ export default function Dashboard() {
   const [newWorkspaceName, setNewWorkspaceName] = useState("");
   
   const [sources, setSources] = useState<DocumentSource[]>([]);
+  const [activeSourceTab, setActiveSourceTab] = useState<SourceTab>("files");
   const [urlInput, setUrlInput] = useState("");
+  const [pasteTitle, setPasteTitle] = useState("");
+  const [pasteContent, setPasteContent] = useState("");
   const [uploadProgress, setUploadProgress] = useState<{
     fileName: string;
     status: string;
@@ -49,15 +55,18 @@ export default function Dashboard() {
   const [chatLoading, setChatLoading] = useState(false);
   const [streamingText, setStreamingText] = useState("");
   
-  const [activeProvider, setActiveProvider] = useState("langdock");
+  const [activeProvider, setActiveProvider] = useState("openrouter");
+  const atlasProviderLabel = "AtlasLM Engine";
   const [citationsMap, setCitationsMap] = useState<Record<string, any>>({});
   const [selectedCitation, setSelectedCitation] = useState<any | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [uiError, setUiError] = useState<string>("");
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  // accumulate streaming chunks outside React state to avoid stale closures
+  const streamingAccumRef = useRef<string>("");
+  const citationsMapRef = useRef<Record<string, any>>({});
 
   // SVG Icons (no emojis, professional)
   const WorkspaceIcon = () => (
@@ -103,14 +112,30 @@ export default function Dashboard() {
     </svg>
   );
 
-  // Initialize workspaces
+  // Initialize workspaces and restore session from localStorage
   useEffect(() => {
+    const restoreSession = async () => {
+      const data = await apiClient.get<Workspace[]>("/api/v1/workspaces");
+      setWorkspaces(data);
+      
+      // Restore selected workspace from localStorage
+      const savedWorkspaceId = typeof window !== 'undefined' ? localStorage.getItem("selectedWorkspaceId") : null;
+      let ws = data.find((w) => w.id === savedWorkspaceId) || data[0];
+      if (ws) {
+        setSelectedWorkspace(ws);
+      }
+    };
+    
     fetchWorkspaces();
+    restoreSession().catch(console.error);
   }, []);
 
-  // When workspace changes, fetch documents & sessions
+  // When workspace changes, fetch documents & sessions + save to localStorage
   useEffect(() => {
     if (selectedWorkspace) {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem("selectedWorkspaceId", selectedWorkspace.id);
+      }
       fetchDocuments(selectedWorkspace.id);
       fetchSessions(selectedWorkspace.id);
       setSelectedSessionId(null);
@@ -121,9 +146,12 @@ export default function Dashboard() {
     }
   }, [selectedWorkspace]);
 
-  // When session changes, fetch session details
+  // When session changes, fetch session details + save to localStorage
   useEffect(() => {
     if (selectedSessionId) {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem("selectedSessionId", selectedSessionId);
+      }
       fetchSessionDetails(selectedSessionId);
     }
   }, [selectedSessionId]);
@@ -132,18 +160,22 @@ export default function Dashboard() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamingText]);
 
-  // --- API CALLS ---
+  // --- API CALLS (all authenticated via apiClient) ---
+  const getErrorMessage = (err: unknown, fallback: string) => {
+    if (err instanceof Error && err.message) return err.message;
+    return fallback;
+  };
 
   const fetchWorkspaces = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/v1/workspaces`);
-      const data = await res.json();
+      const data = await apiClient.get<Workspace[]>("/api/v1/workspaces");
       setWorkspaces(data);
       if (data.length > 0 && !selectedWorkspace) {
         setSelectedWorkspace(data[0]);
       }
     } catch (e) {
       console.error(e);
+      setUiError(getErrorMessage(e, "Failed to load notebooks. Please refresh and try again."));
     }
   };
 
@@ -151,24 +183,20 @@ export default function Dashboard() {
     e.preventDefault();
     if (!newWorkspaceName.trim()) return;
     try {
-      const res = await fetch(`${API_URL}/api/v1/workspaces`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newWorkspaceName }),
-      });
-      const data = await res.json();
+      const data = await apiClient.post<Workspace>("/api/v1/workspaces", { name: newWorkspaceName });
       setWorkspaces((prev) => [data, ...prev]);
       setSelectedWorkspace(data);
       setNewWorkspaceName("");
+      setUiError("");
     } catch (e) {
       console.error(e);
+      setUiError(getErrorMessage(e, "Failed to create notebook. Please try a different name."));
     }
   };
 
   const fetchDocuments = async (wsId: string) => {
     try {
-      const res = await fetch(`${API_URL}/api/v1/workspaces/${wsId}/documents`);
-      const data = await res.json();
+      const data = await apiClient.get<any[]>(`/api/v1/workspaces/${wsId}/documents`);
       // Map server documents to source structure, marking grounded
       setSources(
         data.map((doc: any) => ({
@@ -178,47 +206,51 @@ export default function Dashboard() {
       );
     } catch (e) {
       console.error(e);
+      setUiError(getErrorMessage(e, "Failed to load sources for this notebook."));
     }
   };
 
   const fetchSessions = async (wsId: string) => {
     try {
-      const res = await fetch(`${API_URL}/api/v1/workspaces/${wsId}/sessions`);
-      const data = await res.json();
+      const data = await apiClient.get<any[]>(`/api/v1/workspaces/${wsId}/sessions`);
       setSessions(data);
-      if (data.length > 0) {
+      
+      // Try to restore selected session from localStorage
+      const savedSessionId = typeof window !== 'undefined' ? localStorage.getItem("selectedSessionId") : null;
+      const savedSession = savedSessionId ? data.find((s) => s.id === savedSessionId) : null;
+      
+      if (savedSession) {
+        setSelectedSessionId(savedSession.id);
+      } else if (data.length > 0) {
         setSelectedSessionId(data[0].id);
       } else {
-        // Create an initial session
+        // Create an initial session if none exist
         handleCreateSession(wsId);
       }
     } catch (e) {
       console.error(e);
+      setUiError(getErrorMessage(e, "Failed to load chat sessions for this notebook."));
     }
   };
 
   const handleCreateSession = async (wsId: string) => {
     try {
-      const res = await fetch(`${API_URL}/api/v1/workspaces/${wsId}/sessions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: "Notebook Chat" }),
-      });
-      const data = await res.json();
+      const data = await apiClient.post<any>(`/api/v1/workspaces/${wsId}/sessions`, { title: "Notebook Chat" });
       setSessions((prev) => [data, ...prev]);
       setSelectedSessionId(data.id);
     } catch (e) {
       console.error(e);
+      setUiError(getErrorMessage(e, "Failed to create chat session. Please retry."));
     }
   };
 
   const fetchSessionDetails = async (sessionId: string) => {
     try {
-      const res = await fetch(`${API_URL}/api/v1/sessions/${sessionId}`);
-      const data = await res.json();
+      const data = await apiClient.get<any>(`/api/v1/sessions/${sessionId}`);
       setMessages(data.messages || []);
     } catch (e) {
       console.error(e);
+      setUiError(getErrorMessage(e, "Failed to load selected chat session."));
     }
   };
 
@@ -243,14 +275,8 @@ export default function Dashboard() {
         progress: 60,
       }));
       
-      const res = await fetch(`${API_URL}/api/v1/workspaces/${selectedWorkspace.id}/documents`, {
-        method: "POST",
-        body: formData,
-      });
+      const doc = await apiClient.postForm<any>(`/api/v1/workspaces/${selectedWorkspace.id}/documents`, formData);
 
-      if (!res.ok) throw new Error("Upload failed");
-
-      const doc = await res.json();
       
       setUploadProgress((prev: any) => ({
         ...prev,
@@ -271,6 +297,7 @@ export default function Dashboard() {
       ]);
       
       setUploadProgress(null);
+      setUiError("");
     } catch (err) {
       console.error(err);
       setUploadProgress({
@@ -278,7 +305,10 @@ export default function Dashboard() {
         status: "Failed to parse document.",
         progress: 100,
       });
+      setUiError(getErrorMessage(err, "File upload failed. Please verify format (PDF/TXT/MD) and size."));
       setTimeout(() => setUploadProgress(null), 3000);
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
@@ -293,14 +323,10 @@ export default function Dashboard() {
     });
 
     try {
-      const res = await fetch(`${API_URL}/api/v1/workspaces/${selectedWorkspace.id}/documents/url`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: urlInput, provider: activeProvider }),
-      });
-
-      if (!res.ok) throw new Error("URL crawler failed");
-      const doc = await res.json();
+      const doc = await apiClient.post<any>(
+        `/api/v1/workspaces/${selectedWorkspace.id}/documents/url`,
+        { url: urlInput, provider: activeProvider }
+      );
 
       setSources((prev) => [
         {
@@ -314,6 +340,7 @@ export default function Dashboard() {
       ]);
       setUrlInput("");
       setUploadProgress(null);
+      setUiError("");
     } catch (e) {
       console.error(e);
       setUploadProgress({
@@ -321,16 +348,69 @@ export default function Dashboard() {
         status: "Failed to crawl web URL.",
         progress: 100,
       });
+      setUiError(getErrorMessage(e, "Website ingestion failed. Check URL and try again."));
+      setTimeout(() => setUploadProgress(null), 3000);
+    }
+  };
+
+  const handleTextIngest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pasteContent.trim() || !selectedWorkspace) return;
+
+    const title = pasteTitle.trim() || "Untitled research note";
+    const content = pasteContent.trim();
+
+    setUploadProgress({
+      fileName: title,
+      status: "Preparing pasted text...",
+      progress: 35,
+    });
+
+    try {
+      const doc = await apiClient.post<any>(
+        `/api/v1/workspaces/${selectedWorkspace.id}/documents/text`,
+        { title, content, provider: activeProvider }
+      );
+
+      setUploadProgress((prev: any) => ({
+        ...prev,
+        status: "Generating vector embeddings...",
+        progress: 90,
+      }));
+
+      setSources((prev) => [
+        {
+          id: doc.id,
+          filename: doc.filename,
+          file_type: doc.file_type,
+          created_at: doc.created_at,
+          status: "grounded",
+        },
+        ...prev,
+      ]);
+      setPasteTitle("");
+      setPasteContent("");
+      setUploadProgress(null);
+      setUiError("");
+    } catch (e) {
+      console.error(e);
+      setUploadProgress({
+        fileName: title,
+        status: "Failed to ingest pasted text.",
+        progress: 100,
+      });
+      setUiError(getErrorMessage(e, "Paste text ingestion failed. Please retry."));
       setTimeout(() => setUploadProgress(null), 3000);
     }
   };
 
   const handleDeleteDocument = async (docId: string) => {
     try {
-      await fetch(`${API_URL}/api/v1/documents/${docId}`, { method: "DELETE" });
+      await apiClient.del(`/api/v1/documents/${docId}`);
       setSources((prev) => prev.filter((d) => d.id !== docId));
     } catch (e) {
       console.error(e);
+      setUiError(getErrorMessage(e, "Failed to delete source."));
     }
   };
 
@@ -341,9 +421,13 @@ export default function Dashboard() {
     if (!chatInput.trim() || !selectedSessionId || chatLoading) return;
 
     const userQuery = chatInput;
+    const sessionId = selectedSessionId; // capture outside closure
     setChatInput("");
     setChatLoading(true);
     setStreamingText("");
+    // Reset ref-based accumulators – avoids stale closure captures of state
+    streamingAccumRef.current = "";
+    citationsMapRef.current = {};
     
     // Optimistic user bubble
     const userMsg: Message = {
@@ -354,13 +438,10 @@ export default function Dashboard() {
     setMessages((prev) => [...prev, userMsg]);
 
     try {
-      const response = await fetch(`${API_URL}/api/v1/sessions/${selectedSessionId}/chat/stream`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: userQuery, provider: activeProvider }),
-      });
-
-      if (!response.ok) throw new Error("SSE connection failed");
+      const response = await apiClient.stream(
+        `/api/v1/sessions/${sessionId}/chat/stream?provider=${activeProvider}`,
+        { content: userQuery }
+      );
 
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
@@ -376,53 +457,55 @@ export default function Dashboard() {
         
         // Split by SSE lines
         const lines = buffer.split("\n");
-        buffer = lines.pop() || ""; // Keep tail
+        buffer = lines.pop() || ""; // Keep incomplete tail for next iteration
 
         for (const line of lines) {
           const cleanLine = line.trim();
           if (!cleanLine) continue;
 
-          if (cleanLine.startsWith("event: metadata")) {
-            // Next line will contain data: {...}
-            continue;
-          }
-
           if (cleanLine.startsWith("data: ")) {
             const dataStr = cleanLine.substring(6).trim();
-            if (dataStr === "[DONE]") {
-              break;
-            }
+            if (dataStr === "[DONE]") break;
             try {
               const payload = JSON.parse(dataStr);
               if (payload.type === "metadata") {
-                // Register matching citations dictionary
+                // Store citation map in ref (not state) to avoid stale closure
+                citationsMapRef.current = payload.sources || {};
                 setCitationsMap(payload.sources || {});
               } else if (payload.type === "chunk") {
-                setStreamingText((prev) => prev + payload.content);
+                // Accumulate in ref AND update state for live render
+                streamingAccumRef.current += payload.content;
+                setStreamingText(streamingAccumRef.current);
+              } else if (payload.error) {
+                throw new Error(payload.error);
               }
-            } catch (e) {
-              // Not JSON, skip
+            } catch {
+              // Non-JSON line, skip
             }
           }
         }
       }
 
-      // Finalize and save streaming content to local bubble list
+      // Use ref values to avoid stale closure – always correct final text
+      const finalContent = streamingAccumRef.current;
+      const finalCitations = citationsMapRef.current;
+
       setMessages((prev) => [
         ...prev,
         {
           id: Math.random().toString(),
           role: "assistant",
-          content: streamingText,
-          // Build references array from citations used
-          citations: Object.values(citationsMap),
+          content: finalContent,
+          citations: Object.values(finalCitations),
         },
       ]);
       setStreamingText("");
       setChatLoading(false);
+      setUiError("");
     } catch (err) {
       console.error(err);
       setChatLoading(false);
+      setUiError(getErrorMessage(err, "Chat failed. Please confirm you have an ingested source and try again."));
       setMessages((prev) => [
         ...prev,
         {
@@ -436,15 +519,18 @@ export default function Dashboard() {
 
   // --- Citation Parser Helper ---
   // Replaces tokens like [source_1] with a glowing clickable visual badge component
-  const renderMessageContentWithCitations = (content: string) => {
+  const renderMessageContentWithCitations = (content: string, msgCitations?: any[]) => {
     const parts = content.split(/(\[source_\d+\])/g);
 
-    
     return parts.map((part, idx) => {
       const match = part.match(/\[source_(\d+)\]/);
       if (match) {
         const tag = `source_${match[1]}`;
-        const sourceDetails = citationsMap[tag] || null;
+        // Resolve from message's own saved citations, or fallback to active session citationsMap
+        const sourceDetails = 
+          (msgCitations && msgCitations.find((c: any) => c.tag === tag)) || 
+          citationsMap[tag] || 
+          null;
         
         return (
           <button
@@ -484,18 +570,18 @@ export default function Dashboard() {
               <div className="flex flex-col gap-4">
                 <div className="flex flex-col gap-2">
                   <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
-                    Active AI Model Provider
+                    AtlasLM Intelligence Mode
                   </label>
                   <select
                     value={activeProvider}
                     onChange={(e) => setActiveProvider(e.target.value)}
                     className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-sm text-zinc-200 focus:outline-none focus:border-zinc-700 transition-colors"
                   >
-                    <option value="langdock">Premium AI (GPT-4o)</option>
-                    <option value="blackbox">Blackbox AI</option>
-                    <option value="openrouter">OpenRouter Auto</option>
-                    <option value="ollama">Ollama (Server Local Llama3)</option>
-                    <option value="openai">OpenAI Direct</option>
+                    <option value="langdock">AtlasLM AI</option>
+                    <option value="blackbox">AtlasLM Engine</option>
+                    <option value="openrouter">AtlasLM Research</option>
+                    <option value="ollama">AtlasLM Studio</option>
+                    <option value="openai">AtlasLM Core</option>
                   </select>
                 </div>
               </div>
@@ -568,10 +654,10 @@ export default function Dashboard() {
           >
             <span className="flex items-center gap-2">
               <SettingsIcon />
-              Pipeline Settings
+              AtlasLM Settings
             </span>
             <span className="text-[9px] uppercase font-bold tracking-wider text-orange-500 bg-orange-950/20 border border-orange-500/20 px-1.5 py-0.5 rounded">
-              {activeProvider}
+              {atlasProviderLabel}
             </span>
           </button>
         </div>
@@ -588,6 +674,12 @@ export default function Dashboard() {
           </div>
         </header>
 
+        {uiError && (
+          <div className="mx-6 mt-4 rounded-lg border border-red-500/30 bg-red-950/20 px-3 py-2 text-[11px] text-red-300">
+            {uiError}
+          </div>
+        )}
+
         {/* Chat Message Scroll Window */}
         <div className="flex-grow overflow-y-auto p-6 flex flex-col gap-6">
           {messages.length === 0 && !streamingText ? (
@@ -598,7 +690,7 @@ export default function Dashboard() {
               </span>
               <h2 className="text-white font-extrabold text-base mb-2">Initialize Grounded Research</h2>
               <p className="text-xs text-zinc-500 leading-relaxed">
-                Drag and drop PDF sources in the right-hand panel, then ask questions. The assistant will answer using only your uploaded materials, outputting clickable inline page citation pills.
+                Create notebook → Add source → Ask question. Start by creating/selecting a notebook, then ingest a PDF/TXT/MD file, website URL, or pasted text.
               </p>
             </div>
           ) : (
@@ -620,7 +712,7 @@ export default function Dashboard() {
                           : "bg-zinc-950/30 border-zinc-900/60 text-zinc-200"
                       }`}
                     >
-                      {isUser ? msg.content : renderMessageContentWithCitations(msg.content)}
+                      {isUser ? msg.content : renderMessageContentWithCitations(msg.content, msg.citations)}
                     </div>
                   </div>
                 );
@@ -646,7 +738,7 @@ export default function Dashboard() {
           <form onSubmit={handleSendChatMessage} className="max-w-3xl mx-auto relative flex items-center">
             <input
               type="text"
-              placeholder={chatLoading ? "Grounded AI thinking..." : "Ask your source documents a question..."}
+              placeholder={chatLoading ? "Grounded AI thinking..." : "Ask your notebook sources a question..."}
               disabled={chatLoading || sources.length === 0}
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
@@ -661,7 +753,7 @@ export default function Dashboard() {
             </button>
           </form>
           {sources.length === 0 && (
-            <p className="text-[10px] text-center text-zinc-600 mt-2 font-medium">Please ingest at least one source file in the right-hand panel to open the chat window.</p>
+            <p className="text-[10px] text-center text-zinc-600 mt-2 font-medium">Add at least one grounded source in the right-hand panel to open the chat window.</p>
           )}
         </div>
       </section>
@@ -669,7 +761,7 @@ export default function Dashboard() {
       {/* COLUMN 3: RIGHT PANEL (Sources Explorer & Citation drawer) */}
       <aside className="w-80 bg-zinc-950 border-l border-zinc-900/60 flex flex-col p-4 gap-6 flex-shrink-0">
         
-        {/* Upload documents area */}
+        {/* Source ingestion area */}
         <div className="flex flex-col gap-3">
           <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Sources Library</span>
           
@@ -681,36 +773,115 @@ export default function Dashboard() {
             onChange={handleFileUpload}
           />
           
-          {/* Drag and drop panel trigger */}
-          <div
-            onClick={() => fileInputRef.current?.click()}
-            className="border-2 border-dashed border-zinc-900 hover:border-orange-500/40 rounded-xl p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-colors group"
-          >
-            <UploadIcon />
-            <h4 className="text-xs font-bold text-white mt-3 mb-1">Add Source Document</h4>
-            <p className="text-[10px] text-zinc-500">PDF, TXT, or MD files up to 50MB</p>
+          <div className="grid grid-cols-3 gap-1.5">
+            {[
+              { id: "files", label: "Files", status: "Ready" },
+              { id: "website", label: "Website", status: "Ready" },
+              { id: "paste", label: "Paste Text", status: "Ready" },
+            ].map((source) => {
+              const isActive = activeSourceTab === source.id;
+              const isReady = source.status === "Ready";
+              return (
+                <button
+                  key={source.id}
+                  type="button"
+                  onClick={() => setActiveSourceTab(source.id as SourceTab)}
+                  className={`rounded-lg border px-2 py-2 text-left transition-colors ${
+                    isActive
+                      ? "border-orange-500/40 bg-orange-950/15"
+                      : "border-zinc-900 bg-zinc-950/30 hover:border-zinc-800"
+                  }`}
+                >
+                  <span className="block text-[10px] font-bold text-white truncate">{source.label}</span>
+                  <span className={`block text-[8px] font-bold uppercase tracking-wider mt-0.5 ${isReady ? "text-orange-500" : "text-zinc-600"}`}>
+                    {source.status}
+                  </span>
+                </button>
+              );
+            })}
           </div>
 
-          {/* URL Ingestion Form */}
-          <form onSubmit={handleURLIngest} className="relative flex items-center mt-1">
-            <span className="absolute left-3">
-              <GlobeIcon />
-            </span>
-            <input
-              type="url"
-              placeholder="Crawl website URL..."
-              required
-              value={urlInput}
-              onChange={(e) => setUrlInput(e.target.value)}
-              className="w-full bg-zinc-900/40 border border-zinc-850 rounded-lg py-2.5 pl-9 pr-12 text-[10px] text-zinc-200 placeholder-zinc-650 focus:outline-none focus:border-zinc-700 transition-colors"
-            />
-            <button
-              type="submit"
-              className="absolute right-2 text-[9px] font-bold text-orange-500 hover:text-orange-400 cursor-pointer"
+          {activeSourceTab === "files" && (
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              className="border-2 border-dashed border-zinc-900 hover:border-orange-500/40 rounded-xl p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-colors group"
             >
-              Add
-            </button>
-          </form>
+              <UploadIcon />
+              <h4 className="text-xs font-bold text-white mt-3 mb-1">Add Source Files</h4>
+              <p className="text-[10px] text-zinc-500">PDF, TXT, or MD files up to 50MB</p>
+            </div>
+          )}
+
+          {activeSourceTab === "website" && (
+            <form onSubmit={handleURLIngest} className="flex flex-col gap-2">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                Website URL
+              </label>
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1 min-w-0">
+                  <span className="absolute left-3">
+                    <GlobeIcon />
+                  </span>
+                  <input
+                    type="url"
+                    placeholder="https://example.com/research"
+                    required
+                    value={urlInput}
+                    onChange={(e) => setUrlInput(e.target.value)}
+                    className="w-full bg-zinc-900/40 border border-zinc-850 rounded-lg py-2.5 pl-9 pr-3 text-[10px] text-zinc-200 placeholder-zinc-650 focus:outline-none focus:border-zinc-700 transition-colors"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="shrink-0 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2.5 text-[10px] font-bold uppercase tracking-wider text-orange-400 hover:bg-zinc-800 hover:text-orange-300 transition-colors cursor-pointer"
+                >
+                  Add
+                </button>
+              </div>
+              <p className="text-[9px] text-zinc-600">Adds a single web page as a grounded notebook source.</p>
+            </form>
+          )}
+
+          {activeSourceTab === "paste" && (
+            <form onSubmit={handleTextIngest} className="flex flex-col gap-2">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                Copied Text
+              </label>
+              <input
+                type="text"
+                placeholder="Source title"
+                value={pasteTitle}
+                onChange={(e) => setPasteTitle(e.target.value)}
+                className="w-full bg-zinc-900/40 border border-zinc-850 rounded-lg py-2.5 px-3 text-[10px] text-zinc-200 placeholder-zinc-650 focus:outline-none focus:border-zinc-700 transition-colors"
+              />
+              <textarea
+                placeholder="Paste notes, transcript excerpts, article text, or research material..."
+                required
+                value={pasteContent}
+                onChange={(e) => setPasteContent(e.target.value)}
+                className="w-full h-28 resize-none bg-zinc-900/40 border border-zinc-850 rounded-lg p-3 text-[10px] leading-relaxed text-zinc-200 placeholder-zinc-650 focus:outline-none focus:border-zinc-700 transition-colors"
+              />
+              <button
+                type="submit"
+                disabled={!pasteContent.trim()}
+                className="w-full bg-white text-zinc-950 disabled:opacity-30 disabled:pointer-events-none rounded-lg py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-zinc-200 transition-colors cursor-pointer"
+              >
+                Add pasted text
+              </button>
+            </form>
+          )}
+
+          <div className="rounded-xl border border-zinc-900 bg-zinc-950/30 p-4 flex flex-col gap-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Next source types</span>
+            <div className="flex flex-wrap gap-1.5">
+              <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-600 border border-zinc-800 rounded px-2 py-1">YouTube</span>
+              <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-600 border border-zinc-800 rounded px-2 py-1">Audio</span>
+              <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-600 border border-zinc-800 rounded px-2 py-1">Image</span>
+            </div>
+            <p className="text-[10px] text-zinc-500 leading-relaxed">
+              Planned AtlasLM source types. These are in roadmap preview and will be enabled after end-to-end ingestion, grounding, and citation support is completed.
+            </p>
+          </div>
         </div>
 
         {/* Uploading progress states */}
@@ -739,7 +910,7 @@ export default function Dashboard() {
           <div className="flex-grow overflow-y-auto flex flex-col gap-2 pr-1">
             {sources.length === 0 ? (
               <div className="flex-grow flex items-center justify-center text-center p-8 border border-zinc-900 border-dashed rounded-xl">
-                <p className="text-[10px] text-zinc-600">No sources uploaded yet. Add a PDF file to begin RAG extraction.</p>
+                <p className="text-[10px] text-zinc-600">No sources grounded yet. Add a file, website, or pasted text source to begin research.</p>
               </div>
             ) : (
               sources.map((src) => (

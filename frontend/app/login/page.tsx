@@ -5,6 +5,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import Logo from "../../components/brand/logo";
+import { supabaseBrowser } from '@/lib/supabaseClient'
+
+const getAuthCallbackUrl = () => {
+  const callbackUrl = new URL('/auth/callback', window.location.origin)
+  callbackUrl.searchParams.set('redirect_origin', window.location.origin)
+  return callbackUrl.toString()
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -19,15 +26,16 @@ export default function LoginPage() {
     setErrorMsg("");
 
     try {
-      // Supabase Auth Integration hook baseline
+      const supabase = supabaseBrowser()
       // You can wire up standard client:
-      // const { error } = await supabase.auth.signInWithPassword({ email, password });
-      
-      // For instant local verification and premium experience:
-      setTimeout(() => {
-        setLoading(false);
-        router.push("/dashboard");
-      }, 1000);
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+
+      if (error) {
+        throw error;
+      }
+
+      setLoading(false);
+      router.push('/dashboard');
     } catch (err: any) {
       setLoading(false);
       setErrorMsg(err.message || "Failed to log in.");
@@ -67,7 +75,10 @@ export default function LoginPage() {
         <div className="flex flex-col gap-3 mb-6">
           <button
             type="button"
-            onClick={() => alert("Google login coming soon! OAuth integration in progress.")}
+            onClick={() => {
+              setLoading(true);
+              window.location.href = `/auth/google?redirect_origin=${encodeURIComponent(window.location.origin)}`;
+            }}
             className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg bg-zinc-900/80 border border-zinc-800 text-sm font-semibold text-zinc-200 hover:bg-zinc-800/80 hover:border-zinc-700 hover:scale-[1.02] transition-all duration-200"
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24">
@@ -81,7 +92,16 @@ export default function LoginPage() {
 
           <button
             type="button"
-            onClick={() => alert("GitHub login coming soon! OAuth integration in progress.")}
+            onClick={async () => {
+              const supabase = supabaseBrowser();
+              setLoading(true);
+              const { error } = await supabase.auth.signInWithOAuth({ provider: 'github', options: { redirectTo: getAuthCallbackUrl() } });
+              if (error) {
+                console.error('GitHub OAuth error', error);
+                setErrorMsg('GitHub sign‑in failed');
+                setLoading(false);
+              }
+            }}
             className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg bg-zinc-900/80 border border-zinc-800 text-sm font-semibold text-zinc-200 hover:bg-zinc-800/80 hover:border-zinc-700 hover:scale-[1.02] transition-all duration-200"
           >
             <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import Logo from "../../components/brand/logo";
+import { supabaseBrowser } from '@/lib/supabaseClient'
 
 export default function SignupPage() {
   const router = useRouter();
@@ -28,12 +29,15 @@ export default function SignupPage() {
     try {
       // Supabase Auth Integration hook baseline
       // You can wire up standard client:
-      // const { error } = await supabase.auth.signUp({ email, password });
-      
-      setTimeout(() => {
-        setLoading(false);
-        router.push("/dashboard");
-      }, 1000);
+      const supabase = supabaseBrowser();
+      const { error } = await supabase.auth.signUp({ email, password });
+
+      if (error) {
+        throw error;
+      }
+
+      setLoading(false);
+      router.push('/dashboard');
     } catch (err: any) {
       setLoading(false);
       setErrorMsg(err.message || "Failed to create account.");

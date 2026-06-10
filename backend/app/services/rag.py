@@ -2,6 +2,7 @@ import uuid
 import json
 import logging
 import time
+import re
 from typing import List, Dict, Any, AsyncGenerator, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import select, text
@@ -17,6 +18,25 @@ if not logger.handlers:
     logger.addHandler(handler)
 
 class RAGService:
+    GREETING_PATTERN = re.compile(
+        r"^\s*(hi|hello|hey|yo|howdy|good morning|good afternoon|good evening|thanks|thank you|thx)\s*[!.]*\s*$",
+        re.IGNORECASE,
+    )
+
+    @classmethod
+    def get_conversational_response(cls, user_message: str) -> str | None:
+        normalized = user_message.strip().lower()
+        if not normalized:
+            return None
+
+        if normalized in {"thanks", "thank you", "thx"}:
+            return "You're welcome. I can help you analyze your sources whenever you're ready."
+
+        if cls.GREETING_PATTERN.match(user_message):
+            return "Hello. How can I help you with your research today?"
+
+        return None
+
     def __init__(self, db: Session):
         self.db = db
 
@@ -104,10 +124,12 @@ class RAGService:
         for idx, chunk in enumerate(chunks):
             tag = f"source_{idx + 1}"
             source_mapping[tag] = {
+                "tag": tag,
                 "chunk_id": str(chunk["chunk_id"]),
                 "document_id": str(chunk["document_id"]),
                 "filename": chunk["filename"],
-                "page_number": chunk["page_number"]
+                "page_number": chunk["page_number"],
+                "content": chunk["content"]
             }
             
             context_blocks.append(
@@ -159,7 +181,23 @@ class RAGService:
         self.db.add(user_msg_record)
         self.db.commit()
 
-        # 2. Retrieve semantic context
+        # 2. Lightweight conversational mode for greetings/thanks
+        conversational_response = self.get_conversational_response(user_message)
+        if conversational_response:
+            yield f"event: data\ndata: {json.dumps({'type': 'chunk', 'content': conversational_response})}\n\n"
+            assistant_msg = ChatMessage(
+                id=uuid.uuid4(),
+                session_id=session_id,
+                role="assistant",
+                content=conversational_response,
+                citations=[]
+            )
+            self.db.add(assistant_msg)
+            self.db.commit()
+            yield "event: end\ndata: [DONE]\n\n"
+            return
+
+        # 3. Retrieve semantic context
         try:
             chunks = await self.retrieve_relevant_chunks(workspace_id, user_message, provider_name)
         except Exception as e:

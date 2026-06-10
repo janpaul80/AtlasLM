@@ -81,3 +81,9 @@ class ChatSessionDetailsOut(ChatSessionOut):
 # Ingestion URL Schema
 class URLIngestRequest(BaseModel):
     url: str
+    provider: Optional[str] = None
+
+class TextIngestRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=180)
+    content: str = Field(..., min_length=1)
+    provider: Optional[str] = None
