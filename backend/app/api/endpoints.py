@@ -119,7 +119,6 @@ async def upload_document(
     request: Request,
     workspace_id: uuid.UUID,
     file: UploadFile = File(...),
-    provider: Optional[str] = Form("openrouter"),
     db: Session = Depends(get_db),
 ):
     uid = current_user_id(request)
@@ -142,10 +141,14 @@ async def upload_document(
         file_type = "md"
     elif filename_lower.endswith(".txt"):
         file_type = "txt"
+    elif filename_lower.endswith(".docx"):
+        file_type = "docx"
+    elif filename_lower.endswith(".csv"):
+        file_type = "csv"
     else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid file format. Only PDF, TXT, and MD files are supported.",
+            detail="Invalid file format. Supported: PDF, DOCX, TXT, MD, CSV.",
         )
 
     pipeline = DocumentPipeline(db)
@@ -345,7 +348,6 @@ async def chat_stream(
     request: Request,
     session_id: uuid.UUID,
     message: ChatMessageCreate,
-    provider: Optional[str] = "openrouter",
     db: Session = Depends(get_db),
 ):
     uid = current_user_id(request)
@@ -394,13 +396,18 @@ async def verify_contact(
 
 @router.get("/settings/providers")
 def get_available_providers():
-    """Returns active LLM and Embedding models currently configured on the system."""
+    """Returns AtlasLM engine availability. Internal provider names are never exposed."""
+    cloud_active = bool(
+        settings.LANGDOCK_API_KEY
+        or settings.OPENROUTER_API_KEY
+        or settings.OPENAI_API_KEY
+        or settings.BLACKBOX_API_KEY
+    )
     return {
         "providers": [
-            {"id": "langdock", "name": "Langdock AI (Default)", "status": "active" if settings.LANGDOCK_API_KEY else "inactive"},
-            {"id": "blackbox", "name": "Blackbox AI", "status": "active" if settings.BLACKBOX_API_KEY else "inactive"},
-            {"id": "openrouter", "name": "OpenRouter", "status": "active" if settings.OPENROUTER_API_KEY else "inactive"},
-            {"id": "ollama", "name": "Ollama Server", "status": "active"},
-            {"id": "openai", "name": "OpenAI Direct", "status": "active" if settings.OPENAI_API_KEY else "inactive"},
+            {"id": "atlas-cloud", "name": "AtlasLM Cloud Engine",
+             "status": "active" if cloud_active else "inactive"},
+            {"id": "atlas-local", "name": "AtlasLM Local Engine",
+             "status": "active"},
         ]
     }

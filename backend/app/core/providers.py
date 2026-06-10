@@ -323,7 +323,7 @@ class ProviderRegistry:
             self._llms["langdock"] = OpenAICompatibleLLM(
                 base_url=settings.LANGDOCK_ENDPOINT_URL,
                 api_key=settings.LANGDOCK_API_KEY,
-                model="gpt-4o",
+                model="gpt-5-mini",
             )
             self._embeddings["langdock"] = OpenAICompatibleEmbedding(
                 base_url=settings.LANGDOCK_ENDPOINT_URL,

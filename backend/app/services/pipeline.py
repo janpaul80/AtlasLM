@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from ..models import Document, DocumentChunk
 from ..core.providers import provider_registry, ProviderError
+from .parsers import extract_text_from_docx, extract_text_from_csv
 
 logger = logging.getLogger("atlaslm.ingestion")
 logger.setLevel(logging.INFO)
@@ -191,9 +192,13 @@ class DocumentPipeline:
             "Ingesting '%s' into workspace %s", filename, workspace_id
         )
 
-        # 1. Parse
-        if file_type.lower() == "pdf":
+        ft = file_type.lower()
+        if ft == "pdf":
             pages_data = self.extract_text_from_pdf(file_bytes, filename)
+        elif ft == "docx":
+            pages_data = extract_text_from_docx(file_bytes, filename)
+        elif ft == "csv":
+            pages_data = extract_text_from_csv(file_bytes, filename)
         else:
             pages_data = self.extract_text_from_txt_or_md(file_bytes, filename)
 

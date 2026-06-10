@@ -55,8 +55,9 @@ export default function Dashboard() {
   const [chatLoading, setChatLoading] = useState(false);
   const [streamingText, setStreamingText] = useState("");
   
-  const [activeProvider, setActiveProvider] = useState("openrouter");
-  const atlasProviderLabel = "AtlasLM Engine";
+  const [activeProvider, setActiveProvider] = useState("atlas-cloud");
+  const [availableProviders, setAvailableProviders] = useState<{ id: string, name: string, status: string }[]>([]);
+  const atlasProviderLabel = availableProviders.find((p) => p.id === activeProvider)?.name || "AtlasLM Engine";
   const [citationsMap, setCitationsMap] = useState<Record<string, any>>({});
   const [selectedCitation, setSelectedCitation] = useState<any | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -126,8 +127,27 @@ export default function Dashboard() {
       }
     };
     
+    const fetchProviders = async () => {
+      try {
+        const data = await apiClient.get<any>("/api/v1/settings/providers");
+        if (data && data.providers) {
+          setAvailableProviders(data.providers);
+          const cloud = data.providers.find((p: any) => p.id === "atlas-cloud");
+          const local = data.providers.find((p: any) => p.id === "atlas-local");
+          if (cloud && cloud.status === "active") {
+            setActiveProvider("atlas-cloud");
+          } else if (local) {
+            setActiveProvider("atlas-local");
+          }
+        }
+      } catch (e) {
+        console.error("Failed to load providers:", e);
+      }
+    };
+    
     fetchWorkspaces();
     restoreSession().catch(console.error);
+    fetchProviders().catch(console.error);
   }, []);
 
   // When workspace changes, fetch documents & sessions + save to localStorage
@@ -266,7 +286,6 @@ export default function Dashboard() {
 
     const formData = new FormData();
     formData.append("file", file);
-    formData.append("provider", activeProvider);
 
     try {
       setUploadProgress((prev: any) => ({
@@ -305,7 +324,7 @@ export default function Dashboard() {
         status: "Failed to parse document.",
         progress: 100,
       });
-      setUiError(getErrorMessage(err, "File upload failed. Please verify format (PDF/TXT/MD) and size."));
+      setUiError(getErrorMessage(err, "File upload failed. Please verify format (PDF/DOCX/TXT/MD/CSV) and size."));
       setTimeout(() => setUploadProgress(null), 3000);
     } finally {
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -325,7 +344,7 @@ export default function Dashboard() {
     try {
       const doc = await apiClient.post<any>(
         `/api/v1/workspaces/${selectedWorkspace.id}/documents/url`,
-        { url: urlInput, provider: activeProvider }
+        { url: urlInput }
       );
 
       setSources((prev) => [
@@ -369,7 +388,7 @@ export default function Dashboard() {
     try {
       const doc = await apiClient.post<any>(
         `/api/v1/workspaces/${selectedWorkspace.id}/documents/text`,
-        { title, content, provider: activeProvider }
+        { title, content }
       );
 
       setUploadProgress((prev: any) => ({
@@ -439,7 +458,7 @@ export default function Dashboard() {
 
     try {
       const response = await apiClient.stream(
-        `/api/v1/sessions/${sessionId}/chat/stream?provider=${activeProvider}`,
+        `/api/v1/sessions/${sessionId}/chat/stream`,
         { content: userQuery }
       );
 
@@ -577,11 +596,11 @@ export default function Dashboard() {
                     onChange={(e) => setActiveProvider(e.target.value)}
                     className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-sm text-zinc-200 focus:outline-none focus:border-zinc-700 transition-colors"
                   >
-                    <option value="langdock">AtlasLM AI</option>
-                    <option value="blackbox">AtlasLM Engine</option>
-                    <option value="openrouter">AtlasLM Research</option>
-                    <option value="ollama">AtlasLM Studio</option>
-                    <option value="openai">AtlasLM Core</option>
+                    {availableProviders.map((prov) => (
+                      <option key={prov.id} value={prov.id} disabled={prov.status === "inactive"}>
+                        {prov.name} {prov.status === "inactive" ? "(Inactive)" : ""}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -690,7 +709,7 @@ export default function Dashboard() {
               </span>
               <h2 className="text-white font-extrabold text-base mb-2">Initialize Grounded Research</h2>
               <p className="text-xs text-zinc-500 leading-relaxed">
-                Create notebook → Add source → Ask question. Start by creating/selecting a notebook, then ingest a PDF/TXT/MD file, website URL, or pasted text.
+                Create notebook → Add source → Ask question. Start by creating/selecting a notebook, then ingest a PDF, DOCX, TXT, MD, or CSV file, website URL, or pasted text.
               </p>
             </div>
           ) : (
@@ -769,7 +788,7 @@ export default function Dashboard() {
             type="file"
             ref={fileInputRef}
             className="hidden"
-            accept=".pdf,.txt,.md"
+            accept=".pdf,.txt,.md,.docx,.csv"
             onChange={handleFileUpload}
           />
           
@@ -808,7 +827,7 @@ export default function Dashboard() {
             >
               <UploadIcon />
               <h4 className="text-xs font-bold text-white mt-3 mb-1">Add Source Files</h4>
-              <p className="text-[10px] text-zinc-500">PDF, TXT, or MD files up to 50MB</p>
+              <p className="text-[10px] text-zinc-550">PDF, DOCX, TXT, MD, CSV files up to 50MB</p>
             </div>
           )}
 
@@ -966,7 +985,11 @@ export default function Dashboard() {
               </div>
               <div className="flex flex-col gap-1">
                 <span className="text-[11px] text-white font-semibold truncate">{selectedCitation.filename}</span>
-                <span className="text-[9px] text-zinc-500">Page {selectedCitation.page_number}</span>
+                <span className="text-[9px] text-zinc-550">
+                  {selectedCitation.filename?.toLowerCase().endsWith('.csv') || selectedCitation.filename?.toLowerCase().endsWith('.docx')
+                    ? `Section ${selectedCitation.page_number}`
+                    : `Page ${selectedCitation.page_number}`}
+                </span>
               </div>
               <p className="text-[10px] text-zinc-300 leading-relaxed bg-zinc-950/80 border border-zinc-900 rounded p-2.5 max-h-[120px] overflow-y-auto font-sans">
                 &quot;{selectedCitation.content}&quot;
