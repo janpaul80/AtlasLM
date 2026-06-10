@@ -17,9 +17,13 @@ from ..schemas import (
 from ..services.pipeline import DocumentPipeline
 from ..services.rag import RAGService
 from ..core.providers import provider_registry, ProviderError
-from ..services.jobs import enqueue_ingestion_job, redis_healthy
+from ..services.jobs import enqueue_ingestion_job, enqueue_studio_job, redis_healthy
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.encoders import jsonable_encoder
+from ..services.studio import StudioService, OUTPUT_TYPES
+from ..models import StudioOutput
+from ..schemas import StudioOutputCreate, StudioOutputOut
+
 
 router = APIRouter()
 
@@ -520,3 +524,140 @@ def get_available_providers():
              "status": "active"},
         ]
     }
+
+
+# ── AtlasLM Studio Endpoints ────────────────────────────────────────────────
+
+@router.get("/studio/types")
+def list_studio_types():
+    """Available Studio output types (drives the frontend Studio panel)."""
+    return {
+        "types": [
+            {"id": k, "label": v["label"]} for k, v in OUTPUT_TYPES.items()
+        ]
+    }
+
+
+@router.get(
+    "/workspaces/{workspace_id}/studio",
+    response_model=List[StudioOutputOut],
+)
+def list_studio_outputs(
+    request: Request,
+    workspace_id: uuid.UUID,
+    db: Session = Depends(get_db),
+):
+    uid = current_user_id(request)
+    _get_owned_workspace(workspace_id, uid, db)
+    return (
+        db.query(StudioOutput)
+        .filter(StudioOutput.workspace_id == workspace_id)
+        .order_by(StudioOutput.created_at.desc())
+        .all()
+    )
+
+
+@router.post(
+    "/workspaces/{workspace_id}/studio",
+    response_model=StudioOutputOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_studio_output(
+    request: Request,
+    workspace_id: uuid.UUID,
+    body: StudioOutputCreate,
+    db: Session = Depends(get_db),
+):
+    uid = current_user_id(request)
+    ws = _get_owned_workspace(workspace_id, uid, db)
+
+    if body.output_type not in OUTPUT_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown output type. Supported: {', '.join(OUTPUT_TYPES)}.",
+        )
+
+    ready_docs = (
+        db.query(Document)
+        .filter(Document.workspace_id == workspace_id, Document.status == "ready")
+        .count()
+    )
+    if ready_docs == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Add at least one source to this notebook before generating "
+                   "a Studio output.",
+        )
+
+    spec = OUTPUT_TYPES[body.output_type]
+    out = StudioOutput(
+        id=uuid.uuid4(),
+        workspace_id=workspace_id,
+        output_type=body.output_type,
+        title=body.title or spec["title_template"].format(workspace=ws.name),
+        document_ids=[str(d) for d in body.document_ids] if body.document_ids else None,
+        status="pending",
+    )
+    db.add(out)
+    db.commit()
+    db.refresh(out)
+
+    # Async path
+    if redis_healthy():
+        try:
+            enqueue_studio_job(output_id=out.id, workspace_id=workspace_id)
+        except Exception:
+            pass  # fall through to sync
+        else:
+            return JSONResponse(
+                status_code=status.HTTP_202_ACCEPTED,
+                content=jsonable_encoder(StudioOutputOut.model_validate(out)),
+            )
+
+    # Sync fallback (Redis down): generate inline.
+    service = StudioService(db)
+    out = await service.generate(out.id)
+    if out.status == "failed":
+        raise HTTPException(status_code=422, detail=out.error_message)
+    return out
+
+
+@router.get("/studio/{output_id}", response_model=StudioOutputOut)
+def get_studio_output(
+    request: Request,
+    output_id: uuid.UUID,
+    db: Session = Depends(get_db),
+):
+    uid = current_user_id(request)
+    out = db.query(StudioOutput).filter(StudioOutput.id == output_id).first()
+    if not out:
+        raise HTTPException(status_code=404, detail="Studio output not found")
+    try:
+        _get_owned_workspace(out.workspace_id, uid, db)
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            raise HTTPException(status_code=404, detail="Studio output not found")
+        raise
+    return out
+
+
+@router.delete("/studio/{output_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_studio_output(
+    request: Request,
+    output_id: uuid.UUID,
+    db: Session = Depends(get_db),
+):
+    uid = current_user_id(request)
+    out = db.query(StudioOutput).filter(StudioOutput.id == output_id).first()
+    if not out:
+        raise HTTPException(status_code=404, detail="Studio output not found")
+    try:
+        _get_owned_workspace(out.workspace_id, uid, db)
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            raise HTTPException(status_code=404, detail="Studio output not found")
+        raise
+    db.delete(out)
+    db.commit()
+    return
+

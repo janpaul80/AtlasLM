@@ -65,6 +65,24 @@ export default function Dashboard() {
   const [showSettings, setShowSettings] = useState(false);
   const [uiError, setUiError] = useState<string>("");
 
+  // Studio State
+  interface StudioOutput {
+    id: string;
+    workspace_id: string;
+    output_type: string;
+    title: string;
+    content: string | null;
+    citations: any[] | null;
+    status: "pending" | "processing" | "ready" | "failed";
+    error_message: string | null;
+    created_at: string;
+  }
+  const [studioOutputs, setStudioOutputs] = useState<StudioOutput[]>([]);
+  const [studioTypes, setStudioTypes] = useState<{id: string; label: string}[]>([]);
+  const [openOutput, setOpenOutput] = useState<StudioOutput | null>(null);
+  const [activeTab, setActiveTab] = useState<"chat" | "studio">("chat");
+
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // accumulate streaming chunks outside React state to avoid stale closures
@@ -146,11 +164,36 @@ export default function Dashboard() {
         console.error("Failed to load providers:", e);
       }
     };
+
+    const fetchStudioTypes = async () => {
+      try {
+        const res = await apiClient.get<{ types: { id: string; label: string }[] }>("/api/v1/studio/types");
+        setStudioTypes(res.types);
+      } catch (e) {
+        console.error("Failed to load studio types:", e);
+      }
+    };
     
     fetchWorkspaces();
     restoreSession().catch(console.error);
     fetchProviders().catch(console.error);
+    fetchStudioTypes().catch(console.error);
   }, []);
+
+  const fetchStudioOutputs = async (wsId: string) => {
+    try {
+      const data = await apiClient.get<StudioOutput[]>(`/api/v1/workspaces/${wsId}/studio`);
+      setStudioOutputs(data);
+      // Resume polling for any pending or processing jobs loaded from DB
+      data.forEach((out) => {
+        if (out.status === "pending" || out.status === "processing") {
+          pollStudioOutput(out.id);
+        }
+      });
+    } catch (e) {
+      console.error("Failed to load studio outputs:", e);
+    }
+  };
 
   // When workspace changes, fetch documents & sessions + save to localStorage
   useEffect(() => {
@@ -160,11 +203,13 @@ export default function Dashboard() {
       }
       fetchDocuments(selectedWorkspace.id);
       fetchSessions(selectedWorkspace.id);
+      fetchStudioOutputs(selectedWorkspace.id);
       setSelectedSessionId(null);
       setMessages([]);
       setStreamingText("");
       setCitationsMap({});
       setSelectedCitation(null);
+      setOpenOutput(null);
     }
   }, [selectedWorkspace]);
 
@@ -384,9 +429,71 @@ export default function Dashboard() {
         progress: 100,
       });
       setUiError(getErrorMessage(e, "Website ingestion failed. Check URL and try again."));
-      setTimeout(() => setUploadProgress(null), 3000);
     }
   };
+
+  const generateStudioOutput = async (outputType: string) => {
+    if (!selectedWorkspace) return;
+    try {
+      const res = await apiClient.postRaw(`/api/v1/workspaces/${selectedWorkspace.id}/studio`, {
+        output_type: outputType,
+      });
+      const body = await res.json();
+      if (res.status === 202) {
+        setStudioOutputs((prev) => [body, ...prev]);
+        pollStudioOutput(body.id);
+        setActiveTab("studio");
+        setUiError("");
+      } else if (res.status === 201 || res.status === 200) {
+        setStudioOutputs((prev) => [body, ...prev]);
+        setActiveTab("studio");
+        setOpenOutput(body);
+        setUiError("");
+      } else {
+        setUiError(body.detail || "Failed to generate Studio output.");
+      }
+    } catch (e) {
+      console.error(e);
+      setUiError(getErrorMessage(e, "Failed to generate Studio output. Please check sources."));
+    }
+  };
+
+  const pollStudioOutput = (outputId: string) => {
+    const interval = setInterval(async () => {
+      try {
+        const out = await apiClient.get<StudioOutput>(`/api/v1/studio/${outputId}`);
+        setStudioOutputs((prev) => prev.map((o) => (o.id === out.id ? out : o)));
+        
+        // Also update open output details if open
+        setOpenOutput((currentOpen) => {
+          if (currentOpen && currentOpen.id === out.id) {
+            return out;
+          }
+          return currentOpen;
+        });
+
+        if (out.status === "ready" || out.status === "failed") {
+          clearInterval(interval);
+        }
+      } catch (err) {
+        console.error("Polling error for Studio output:", err);
+        clearInterval(interval);
+      }
+    }, 2000);
+  };
+
+  const handleDeleteStudioOutput = async (outputId: string) => {
+    try {
+      await apiClient.del(`/api/v1/studio/${outputId}`);
+      setStudioOutputs((prev) => prev.filter((o) => o.id !== outputId));
+      setOpenOutput((curr) => (curr && curr.id === outputId ? null : curr));
+    } catch (e) {
+      console.error(e);
+      setUiError(getErrorMessage(e, "Failed to delete Studio output."));
+    }
+  };
+
+
 
   const handleTextIngest = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -707,6 +814,30 @@ export default function Dashboard() {
             <span className="text-zinc-650 text-xs">Active Workspace /</span>
             <span className="text-white text-xs font-bold">{selectedWorkspace?.name || "No active workspace"}</span>
           </div>
+
+          {/* Chat / Studio Tab Toggle */}
+          <div className="flex bg-zinc-900 p-0.5 rounded-lg border border-zinc-800">
+            <button
+              onClick={() => setActiveTab("chat")}
+              className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                activeTab === "chat"
+                  ? "bg-zinc-800 text-white shadow-sm"
+                  : "text-zinc-400 hover:text-zinc-200"
+              }`}
+            >
+              Grounded Chat
+            </button>
+            <button
+              onClick={() => setActiveTab("studio")}
+              className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                activeTab === "studio"
+                  ? "bg-zinc-800 text-white shadow-sm"
+                  : "text-zinc-400 hover:text-zinc-200"
+              }`}
+            >
+              AtlasLM Studio
+            </button>
+          </div>
         </header>
 
         {uiError && (
@@ -715,58 +846,185 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Chat Message Scroll Window */}
-        <div className="flex-grow overflow-y-auto p-6 flex flex-col gap-6">
-          {messages.length === 0 && !streamingText ? (
-            /* Empty State */
-            <div className="flex-grow flex flex-col items-center justify-center text-center max-w-md mx-auto">
-              <span className="w-12 h-12 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center mb-6">
-                <WorkspaceIcon />
-              </span>
-              <h2 className="text-white font-extrabold text-base mb-2">Initialize Grounded Research</h2>
-              <p className="text-xs text-zinc-500 leading-relaxed">
-                Create notebook → Add source → Ask question. Start by creating/selecting a notebook, then ingest a PDF, DOCX, TXT, MD, or CSV file, website URL, or pasted text.
-              </p>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-6 max-w-3xl mx-auto w-full">
-              {messages.map((msg) => {
-                const isUser = msg.role === "user";
-                return (
-                  <div
-                    key={msg.id}
-                    className={`flex flex-col gap-2 max-w-[85%] ${isUser ? "self-end items-end" : "self-start items-start"}`}
-                  >
-                    <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-600">
-                      {isUser ? "You" : "AtlasLM"}
-                    </span>
-                    <div
-                      className={`p-4 rounded-xl text-xs leading-relaxed border ${
-                        isUser
-                          ? "bg-zinc-900 border-zinc-800 text-white"
-                          : "bg-zinc-950/30 border-zinc-900/60 text-zinc-200"
-                      }`}
+        {/* Tab Content Rendering */}
+        {activeTab === "studio" ? (
+          <div className="flex-grow overflow-y-auto p-6 flex flex-col gap-6">
+            {openOutput ? (
+              /* Reader View */
+              <div className="max-w-3xl mx-auto w-full flex flex-col gap-4">
+                <div className="flex items-center justify-between border-b border-zinc-900/60 pb-4">
+                  <div>
+                    <button
+                      onClick={() => setOpenOutput(null)}
+                      className="text-orange-500 hover:text-orange-400 text-xs font-bold mb-1 flex items-center gap-1 cursor-pointer"
                     >
-                      {isUser ? msg.content : renderMessageContentWithCitations(msg.content, msg.citations)}
-                    </div>
+                      &larr; Back to Studio outputs
+                    </button>
+                    <h2 className="text-white text-lg font-bold">{openOutput.title}</h2>
+                    <span className="text-[9px] uppercase tracking-wider font-bold text-zinc-500 bg-zinc-900 px-2 py-0.5 rounded mt-1 inline-block">
+                      {openOutput.output_type.replace("_", " ")}
+                    </span>
                   </div>
-                );
-              })}
-
-              {/* SSE Live Streaming text chunk render */}
-              {streamingText && (
-                <div className="flex flex-col gap-2 max-w-[85%] self-start items-start">
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-600">AtlasLM</span>
-                  <div className="p-4 rounded-xl text-xs leading-relaxed border bg-zinc-950/30 border-zinc-900/60 text-zinc-200">
-                    {renderMessageContentWithCitations(streamingText)}
-                    <span className="inline-block w-1.5 h-3 ml-1 bg-orange-500 animate-pulse" />
+                  <button
+                    onClick={() => handleDeleteStudioOutput(openOutput.id)}
+                    className="bg-red-950/40 text-red-400 border border-red-900/30 hover:bg-red-900/20 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
+                  >
+                    Delete Output
+                  </button>
+                </div>
+                <div className="text-zinc-200 text-xs leading-relaxed whitespace-pre-wrap font-sans bg-zinc-950/30 border border-zinc-900/60 p-6 rounded-xl">
+                  {renderMessageContentWithCitations(openOutput.content || "", openOutput.citations || [])}
+                </div>
+              </div>
+            ) : (
+              /* Grid / Main List View */
+              <div className="max-w-3xl mx-auto w-full flex flex-col gap-6">
+                <div className="flex items-center justify-between border-b border-zinc-900/60 pb-4">
+                  <div>
+                    <h2 className="text-white font-extrabold text-base">AtlasLM Studio</h2>
+                    <p className="text-[10px] text-zinc-500">Generate structured reports and executive summaries grounded on your workspace corpus.</p>
+                  </div>
+                  
+                  {/* Generate menu */}
+                  <div className="flex items-center gap-2">
+                    {studioTypes.map((type) => (
+                      <button
+                        key={type.id}
+                        onClick={() => generateStudioOutput(type.id)}
+                        disabled={!hasReadySources}
+                        className="bg-orange-600 hover:bg-orange-500 disabled:opacity-40 disabled:pointer-events-none text-white font-bold px-3 py-2 rounded-lg text-xs transition-colors cursor-pointer"
+                      >
+                        Generate {type.label}
+                      </button>
+                    ))}
                   </div>
                 </div>
-              )}
-            </div>
-          )}
-          <div ref={messagesEndRef} />
-        </div>
+
+                {/* Outputs List */}
+                <div className="flex flex-col gap-3">
+                  {studioOutputs.length === 0 ? (
+                    <div className="text-center p-12 border border-zinc-900 border-dashed rounded-xl">
+                      <p className="text-xs text-zinc-500">No Studio outputs generated yet. Choose a format above to begin.</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {studioOutputs.map((out) => {
+                        const isPending = out.status === "pending" || out.status === "processing";
+                        const isFailed = out.status === "failed";
+                        return (
+                          <div
+                            key={out.id}
+                            onClick={() => !isPending && !isFailed && setOpenOutput(out)}
+                            className={`p-4 rounded-xl border transition-all flex flex-col justify-between h-36 ${
+                              isPending
+                                ? "border-zinc-900 bg-zinc-900/20"
+                                : isFailed
+                                ? "border-red-950/40 bg-red-950/5"
+                                : "border-zinc-900 bg-zinc-950/30 hover:border-zinc-800 cursor-pointer hover:bg-zinc-900/10"
+                            }`}
+                          >
+                            <div>
+                              <div className="flex items-start justify-between gap-2">
+                                <h3 className="text-white text-xs font-bold line-clamp-2">{out.title}</h3>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteStudioOutput(out.id);
+                                  }}
+                                  className="text-zinc-650 hover:text-red-500 transition-colors p-1"
+                                >
+                                  <TrashIcon />
+                                </button>
+                              </div>
+                              <span className="text-[9px] uppercase tracking-wider font-bold text-zinc-500 bg-zinc-900/60 px-1.5 py-0.5 rounded mt-1.5 inline-block">
+                                {out.output_type.replace("_", " ")}
+                              </span>
+                            </div>
+
+                            <div className="mt-4 flex items-center justify-between text-[10px]">
+                              {isPending ? (
+                                <span className="text-orange-500 font-bold flex items-center gap-1.5">
+                                  <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                  </svg>
+                                  Generating...
+                                </span>
+                              ) : isFailed ? (
+                                <span className="text-red-500 font-bold max-w-[200px] truncate" title={out.error_message || "Generation failed"}>
+                                  Failed: {out.error_message || "Unknown error"}
+                                </span>
+                              ) : (
+                                <span className="text-zinc-550">Ready</span>
+                              )}
+                              <span className="text-zinc-600 text-[9px]">
+                                {new Date(out.created_at).toLocaleDateString()}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          /* Chat Window Tab Content */
+          <div className="flex-grow overflow-y-auto p-6 flex flex-col gap-6">
+            {messages.length === 0 && !streamingText ? (
+              /* Empty State */
+              <div className="flex-grow flex flex-col items-center justify-center text-center max-w-md mx-auto">
+                <span className="w-12 h-12 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center mb-6">
+                  <WorkspaceIcon />
+                </span>
+                <h2 className="text-white font-extrabold text-base mb-2">Initialize Grounded Research</h2>
+                <p className="text-xs text-zinc-500 leading-relaxed">
+                  Create notebook → Add source → Ask question. Start by creating/selecting a notebook, then ingest a PDF, DOCX, TXT, MD, or CSV file, website URL, or pasted text.
+                </p>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-6 max-w-3xl mx-auto w-full">
+                {messages.map((msg) => {
+                  const isUser = msg.role === "user";
+                  return (
+                    <div
+                      key={msg.id}
+                      className={`flex flex-col gap-2 max-w-[85%] ${isUser ? "self-end items-end" : "self-start items-start"}`}
+                    >
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-600">
+                        {isUser ? "You" : "AtlasLM"}
+                      </span>
+                      <div
+                        className={`p-4 rounded-xl text-xs leading-relaxed border ${
+                          isUser
+                            ? "bg-zinc-900 border-zinc-800 text-white"
+                            : "bg-zinc-950/30 border-zinc-900/60 text-zinc-200"
+                        }`}
+                      >
+                        {isUser ? msg.content : renderMessageContentWithCitations(msg.content, msg.citations)}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* SSE Live Streaming text chunk render */}
+                {streamingText && (
+                  <div className="flex flex-col gap-2 max-w-[85%] self-start items-start">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-600">AtlasLM</span>
+                    <div className="p-4 rounded-xl text-xs leading-relaxed border bg-zinc-950/30 border-zinc-900/60 text-zinc-200">
+                      {renderMessageContentWithCitations(streamingText)}
+                      <span className="inline-block w-1.5 h-3 ml-1 bg-orange-500 animate-pulse" />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+        )}
+
 
         {/* Message Input Box */}
         <div className="p-6 border-t border-zinc-900/60 flex-shrink-0 bg-zinc-950">

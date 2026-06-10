@@ -119,3 +119,35 @@ def redis_healthy() -> bool:
         return bool(get_redis().ping())
     except Exception:
         return False
+
+
+STUDIO_QUEUE_KEY = "atlaslm:studio:queue"
+
+
+def enqueue_studio_job(*, output_id: uuid.UUID, workspace_id: uuid.UUID) -> str:
+    """
+    Push a Studio generation job. Raises redis.RedisError on connectivity
+    failure (caller decides whether to fall back to synchronous generation).
+    """
+    r = get_redis()
+    job_id = str(uuid.uuid4())
+    envelope = json.dumps(
+        {
+            "job_id": job_id,
+            "output_id": str(output_id),
+            "workspace_id": str(workspace_id),
+        }
+    ).encode("utf-8")
+    r.lpush(STUDIO_QUEUE_KEY, envelope)
+    logger.info("Enqueued studio job %s for output %s", job_id, output_id)
+    return job_id
+
+
+def pop_studio_job(timeout: int = 5):
+    """Blocking pop of the next Studio job, or None on timeout."""
+    r = get_redis()
+    item = r.brpop(STUDIO_QUEUE_KEY, timeout=timeout)
+    if item is None:
+        return None
+    return json.loads(item[1].decode("utf-8"))
+

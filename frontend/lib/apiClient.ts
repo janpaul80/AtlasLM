@@ -116,4 +116,17 @@ async function stream(path: string, body: unknown): Promise<Response> {
   return res;
 }
 
-export const apiClient = { get, post, postForm, del, stream };
+/**
+ * POST + raw response – returns the raw `Response` object instead of deserializing it.
+ */
+async function postRaw(path: string, body: unknown): Promise<Response> {
+  const headers = await authHeaders({ "Content-Type": "application/json" });
+  return fetch(`${API_URL}${path}`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+}
+
+export const apiClient = { get, post, postForm, del, stream, postRaw };
+
