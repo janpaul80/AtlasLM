@@ -8,7 +8,12 @@ from sqlalchemy.orm import Session
 
 from ..models import Document, DocumentChunk
 from ..core.providers import provider_registry, ProviderError
-from .parsers import extract_text_from_docx, extract_text_from_csv
+from .parsers import (
+    extract_text_from_docx,
+    extract_text_from_csv,
+    extract_text_from_xlsx,
+    extract_text_from_pptx,
+)
 
 logger = logging.getLogger("atlaslm.ingestion")
 logger.setLevel(logging.INFO)
@@ -175,6 +180,92 @@ class DocumentPipeline:
 
     # ------------------------------------------------------------------ #
     # Ingestion
+    def _parse(self, file_bytes, file_type, filename):
+        ft = file_type.lower()
+        if ft == "pdf":
+            return self.extract_text_from_pdf(file_bytes, filename)
+        elif ft == "docx":
+            return extract_text_from_docx(file_bytes, filename)
+        elif ft == "csv":
+            return extract_text_from_csv(file_bytes, filename)
+        elif ft == "xlsx":
+            return extract_text_from_xlsx(file_bytes, filename)
+        elif ft == "pptx":
+            return extract_text_from_pptx(file_bytes, filename)
+        else:
+            return self.extract_text_from_txt_or_md(file_bytes, filename)
+
+    def create_pending_document(
+        self,
+        workspace_id,
+        filename,
+        file_type,
+        source_url=None,
+    ):
+        import uuid as _uuid
+        from ..models import Document
+        document = Document(
+            id=_uuid.uuid4(),
+            workspace_id=workspace_id,
+            filename=filename,
+            file_type=file_type,
+            source_url=source_url,
+            status="processing",
+            error_message=None,
+        )
+        self.db.add(document)
+        self.db.commit()
+        self.db.refresh(document)
+        return document
+
+    async def run_ingestion_for_document(self, document, file_bytes, file_type):
+        import uuid as _uuid
+        from ..models import DocumentChunk
+        from ..core.providers import provider_registry
+
+        logger.info("Worker ingestion start: '%s' (doc %s)", document.filename, document.id)
+
+        pages_data = self._parse(file_bytes, file_type, document.filename)
+
+        chunks_data = self.recursive_chunk_text(pages_data)
+        if not chunks_data:
+            raise ValueError(
+                f"No extractable text found in '{document.filename}'. "
+                "The file may be empty or contain only images "
+                "(scanned PDFs need OCR, which is not yet enabled)."
+            )
+
+        contents = [c["content"] for c in chunks_data]
+        embeddings = await self.generate_embeddings_with_retry(contents=contents)
+
+        if len(embeddings) != len(chunks_data):
+            raise ValueError(
+                "Embedding count mismatch during ingestion; aborting to protect data integrity."
+            )
+
+        document.embedding_model = provider_registry.get_embeddings(None).model_id
+
+        for idx, chunk_info in enumerate(chunks_data):
+            self.db.add(
+                DocumentChunk(
+                    id=_uuid.uuid4(),
+                    document_id=document.id,
+                    content=chunk_info["content"],
+                    embedding=embeddings[idx],
+                    page_number=chunk_info["page_number"],
+                    chunk_index=chunk_info["chunk_index"],
+                    char_start=chunk_info["char_start"],
+                    char_end=chunk_info["char_end"],
+                )
+            )
+        # NOTE: commit is done by the caller (worker) together with status='ready'
+        # so chunks + ready-state are atomic.
+        self.db.flush()
+        logger.info(
+            "Worker ingestion parsed+embedded: '%s' (%d chunks)",
+            document.filename, len(chunks_data),
+        )
+
     # ------------------------------------------------------------------ #
 
     async def ingest_document(
@@ -192,15 +283,7 @@ class DocumentPipeline:
             "Ingesting '%s' into workspace %s", filename, workspace_id
         )
 
-        ft = file_type.lower()
-        if ft == "pdf":
-            pages_data = self.extract_text_from_pdf(file_bytes, filename)
-        elif ft == "docx":
-            pages_data = extract_text_from_docx(file_bytes, filename)
-        elif ft == "csv":
-            pages_data = extract_text_from_csv(file_bytes, filename)
-        else:
-            pages_data = self.extract_text_from_txt_or_md(file_bytes, filename)
+        pages_data = self._parse(file_bytes, file_type, filename)
 
         # 2. Chunk
         chunks_data = self.recursive_chunk_text(
@@ -238,6 +321,7 @@ class DocumentPipeline:
                 file_type=file_type,
                 source_url=source_url,
                 embedding_model=embedding_model_id,
+                status="ready",
             )
             self.db.add(document)
             self.db.flush()

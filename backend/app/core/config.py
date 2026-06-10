@@ -11,6 +11,10 @@ class Settings(BaseSettings):
         default="postgresql://atlaslm:atlaspass@localhost:5435/atlaslm_db",
         env="DATABASE_URL"
     )
+    REDIS_URL: str = Field(
+        default="redis://redis:6379/0",
+        env="REDIS_URL"
+    )
     
     # JWT Fallback Settings
     JWT_SECRET: str = Field(..., env="JWT_SECRET")  # required, no default

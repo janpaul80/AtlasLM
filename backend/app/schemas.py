@@ -28,6 +28,8 @@ class DocumentOut(BaseModel):
     filename: str
     file_type: str
     source_url: Optional[str] = None
+    status: str = "ready"
+    error_message: Optional[str] = None
     created_at: datetime
     
     class Config:

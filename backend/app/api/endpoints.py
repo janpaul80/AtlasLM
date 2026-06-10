@@ -17,6 +17,9 @@ from ..schemas import (
 from ..services.pipeline import DocumentPipeline
 from ..services.rag import RAGService
 from ..core.providers import provider_registry, ProviderError
+from ..services.jobs import enqueue_ingestion_job, redis_healthy
+from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.encoders import jsonable_encoder
 
 router = APIRouter()
 
@@ -110,6 +113,30 @@ def list_documents(
     )
 
 
+@router.get("/documents/{document_id}/status")
+def get_document_status(
+    request: Request,
+    document_id: uuid.UUID,
+    db: Session = Depends(get_db),
+):
+    """Poll ingestion status for a single document."""
+    uid = current_user_id(request)
+    doc = db.query(Document).filter(Document.id == document_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    try:
+        _get_owned_workspace(doc.workspace_id, uid, db)
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            raise HTTPException(status_code=404, detail="Document not found")
+        raise
+    return {
+        "id": str(doc.id),
+        "status": doc.status,
+        "error_message": doc.error_message,
+    }
+
+
 @router.post(
     "/workspaces/{workspace_id}/documents",
     response_model=DocumentOut,
@@ -145,13 +172,44 @@ async def upload_document(
         file_type = "docx"
     elif filename_lower.endswith(".csv"):
         file_type = "csv"
+    elif filename_lower.endswith(".xlsx"):
+        file_type = "xlsx"
+    elif filename_lower.endswith(".pptx"):
+        file_type = "pptx"
     else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid file format. Supported: PDF, DOCX, TXT, MD, CSV.",
+            detail="Invalid file format. Supported: PDF, DOCX, XLSX, PPTX, TXT, MD, CSV.",
         )
 
     pipeline = DocumentPipeline(db)
+
+    # Async path: create placeholder doc, enqueue job, return 202.
+    if redis_healthy():
+        doc = pipeline.create_pending_document(
+            workspace_id=workspace_id,
+            filename=filename,
+            file_type=file_type,
+        )
+        try:
+            enqueue_ingestion_job(
+                document_id=doc.id,
+                workspace_id=workspace_id,
+                filename=filename,
+                file_type=file_type,
+                file_bytes=file_bytes,
+            )
+        except Exception:
+            # Queue push failed after doc creation - fall back to sync.
+            db.delete(doc)
+            db.commit()
+        else:
+            return JSONResponse(
+                status_code=status.HTTP_202_ACCEPTED,
+                content=jsonable_encoder(DocumentOut.model_validate(doc)),
+            )
+
+    # Sync fallback (Redis down): original behavior.
     try:
         doc = await pipeline.ingest_document(
             workspace_id=workspace_id,

@@ -16,7 +16,8 @@ interface DocumentSource {
   filename: string;
   file_type: string;
   created_at: string;
-  status: "parsing" | "embedding" | "grounded" | "failed";
+  status: "processing" | "ready" | "failed";
+  error_message?: string | null;
 }
 
 type SourceTab = "files" | "website" | "youtube" | "audio" | "image" | "paste";
@@ -38,6 +39,7 @@ export default function Dashboard() {
   const [newWorkspaceName, setNewWorkspaceName] = useState("");
   
   const [sources, setSources] = useState<DocumentSource[]>([]);
+  const hasReadySources = sources.some((src) => src.status === "ready" || !src.status || (src.status as string) === "grounded");
   const [activeSourceTab, setActiveSourceTab] = useState<SourceTab>("files");
   const [urlInput, setUrlInput] = useState("");
   const [pasteTitle, setPasteTitle] = useState("");
@@ -180,6 +182,19 @@ export default function Dashboard() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamingText]);
 
+  // Poll workspace documents if any are processing
+  useEffect(() => {
+    if (!selectedWorkspace) return;
+    const hasProcessing = sources.some((src) => src.status === "processing");
+    if (!hasProcessing) return;
+
+    const interval = setInterval(() => {
+      fetchDocuments(selectedWorkspace.id);
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [sources, selectedWorkspace]);
+
   // --- API CALLS (all authenticated via apiClient) ---
   const getErrorMessage = (err: unknown, fallback: string) => {
     if (err instanceof Error && err.message) return err.message;
@@ -217,11 +232,10 @@ export default function Dashboard() {
   const fetchDocuments = async (wsId: string) => {
     try {
       const data = await apiClient.get<any[]>(`/api/v1/workspaces/${wsId}/documents`);
-      // Map server documents to source structure, marking grounded
       setSources(
         data.map((doc: any) => ({
           ...doc,
-          status: "grounded",
+          status: doc.status || "ready",
         }))
       );
     } catch (e) {
@@ -310,7 +324,8 @@ export default function Dashboard() {
           filename: doc.filename,
           file_type: doc.file_type,
           created_at: doc.created_at,
-          status: "grounded",
+          status: doc.status || "ready",
+          error_message: doc.error_message,
         },
         ...prev,
       ]);
@@ -353,7 +368,7 @@ export default function Dashboard() {
           filename: doc.filename,
           file_type: doc.file_type,
           created_at: doc.created_at,
-          status: "grounded",
+          status: doc.status || "ready",
         },
         ...prev,
       ]);
@@ -403,7 +418,7 @@ export default function Dashboard() {
           filename: doc.filename,
           file_type: doc.file_type,
           created_at: doc.created_at,
-          status: "grounded",
+          status: doc.status || "ready",
         },
         ...prev,
       ]);
@@ -758,21 +773,21 @@ export default function Dashboard() {
             <input
               type="text"
               placeholder={chatLoading ? "Grounded AI thinking..." : "Ask your notebook sources a question..."}
-              disabled={chatLoading || sources.length === 0}
+              disabled={chatLoading || !hasReadySources}
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
               className="w-full bg-zinc-900/70 border border-zinc-850 rounded-xl py-4 pl-4 pr-14 text-xs text-zinc-150 placeholder-zinc-600 focus:outline-none focus:border-zinc-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             />
             <button
               type="submit"
-              disabled={chatLoading || !chatInput.trim() || sources.length === 0}
+              disabled={chatLoading || !chatInput.trim() || !hasReadySources}
               className="absolute right-3 bg-white p-2 rounded-lg transition-all hover:scale-105 active:scale-95 disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
             >
               <SendIcon />
             </button>
           </form>
-          {sources.length === 0 && (
-            <p className="text-[10px] text-center text-zinc-600 mt-2 font-medium">Add at least one grounded source in the right-hand panel to open the chat window.</p>
+          {!hasReadySources && (
+            <p className="text-[10px] text-center text-zinc-650 mt-2 font-medium">Add at least one grounded source in the right-hand panel to open the chat window.</p>
           )}
         </div>
       </section>
@@ -788,7 +803,7 @@ export default function Dashboard() {
             type="file"
             ref={fileInputRef}
             className="hidden"
-            accept=".pdf,.txt,.md,.docx,.csv"
+            accept=".pdf,.txt,.md,.docx,.csv,.xlsx,.pptx"
             onChange={handleFileUpload}
           />
           
@@ -827,7 +842,7 @@ export default function Dashboard() {
             >
               <UploadIcon />
               <h4 className="text-xs font-bold text-white mt-3 mb-1">Add Source Files</h4>
-              <p className="text-[10px] text-zinc-550">PDF, DOCX, TXT, MD, CSV files up to 50MB</p>
+              <p className="text-[10px] text-zinc-550">PDF, DOCX, XLSX, PPTX, TXT, MD, CSV files up to 50MB</p>
             </div>
           )}
 
@@ -932,33 +947,68 @@ export default function Dashboard() {
                 <p className="text-[10px] text-zinc-600">No sources grounded yet. Add a file, website, or pasted text source to begin research.</p>
               </div>
             ) : (
-              sources.map((src) => (
-                <div
-                  key={src.id}
-                  className="p-3 rounded-lg border border-zinc-900 bg-zinc-950/30 flex items-center justify-between gap-3 group"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    {/* Tiny visual document decorator */}
-                    <span className="w-6 h-6 rounded bg-zinc-900 border border-zinc-850 flex items-center justify-center flex-shrink-0">
-                      <svg className="w-3.5 h-3.5 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
-                    </span>
-                    <div className="flex flex-col min-w-0">
-                      <span className="text-[11px] text-white font-semibold truncate">{src.filename}</span>
-                      <span className="text-[9px] text-zinc-500 uppercase font-medium">{src.file_type}</span>
-                    </div>
-                  </div>
-                  
-                  {/* Delete button */}
-                  <button
-                    onClick={() => handleDeleteDocument(src.id)}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-red-950/20 border border-transparent hover:border-red-900/30 rounded cursor-pointer"
+              sources.map((src) => {
+                const isProcessing = src.status === "processing";
+                const isFailed = src.status === "failed";
+
+                return (
+                  <div
+                    key={src.id}
+                    className={`p-3 rounded-lg border flex items-center justify-between gap-3 group transition-colors ${
+                      isFailed
+                        ? "border-red-950/40 bg-red-950/5"
+                        : "border-zinc-900 bg-zinc-950/30"
+                    }`}
                   >
-                    <TrashIcon />
-                  </button>
-                </div>
-              ))
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      {/* Tiny visual document decorator */}
+                      <span className="w-6 h-6 rounded bg-zinc-900 border border-zinc-850 flex items-center justify-center flex-shrink-0">
+                        {isProcessing ? (
+                          <svg className="w-3.5 h-3.5 text-orange-500 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                          </svg>
+                        ) : (
+                          <svg className={`w-3.5 h-3.5 ${isFailed ? "text-red-500" : "text-zinc-400"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                        )}
+                      </span>
+                      <div className="flex flex-col min-w-0 flex-1">
+                        <span className="text-[11px] text-white font-semibold truncate">{src.filename}</span>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className="text-[9px] text-zinc-500 uppercase font-medium">{src.file_type}</span>
+                          {isProcessing && (
+                            <span className="text-[9px] text-orange-500 font-bold flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-pulse" />
+                              Processing...
+                            </span>
+                          )}
+                          {isFailed && (
+                            <span
+                              className="text-[9px] text-red-500 font-bold cursor-help truncate max-w-[150px]"
+                              title={src.error_message || "Ingestion failed"}
+                            >
+                              Failed: {src.error_message || "Unknown error"}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Delete button */}
+                    <button
+                      onClick={() => handleDeleteDocument(src.id)}
+                      className={`transition-opacity p-1 hover:bg-red-950/20 border border-transparent hover:border-red-900/30 rounded cursor-pointer ${
+                        isFailed ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                      }`}
+                      title={isFailed ? "Remove failed upload" : "Delete source"}
+                    >
+                      <TrashIcon />
+                    </button>
+                  </div>
+                );
+              })
             )}
           </div>
         </div>
@@ -986,9 +1036,18 @@ export default function Dashboard() {
               <div className="flex flex-col gap-1">
                 <span className="text-[11px] text-white font-semibold truncate">{selectedCitation.filename}</span>
                 <span className="text-[9px] text-zinc-550">
-                  {selectedCitation.filename?.toLowerCase().endsWith('.csv') || selectedCitation.filename?.toLowerCase().endsWith('.docx')
-                    ? `Section ${selectedCitation.page_number}`
-                    : `Page ${selectedCitation.page_number}`}
+                  {(() => {
+                    const fn = selectedCitation.filename?.toLowerCase() || "";
+                    if (fn.endsWith('.pdf')) {
+                      return `Page ${selectedCitation.page_number}`;
+                    } else if (fn.endsWith('.pptx')) {
+                      return `Slide ${selectedCitation.page_number}`;
+                    } else if (fn.endsWith('.docx') || fn.endsWith('.csv') || fn.endsWith('.xlsx')) {
+                      return `Section ${selectedCitation.page_number}`;
+                    } else {
+                      return `Page ${selectedCitation.page_number}`; // fallback
+                    }
+                  })()}
                 </span>
               </div>
               <p className="text-[10px] text-zinc-300 leading-relaxed bg-zinc-950/80 border border-zinc-900 rounded p-2.5 max-h-[120px] overflow-y-auto font-sans">

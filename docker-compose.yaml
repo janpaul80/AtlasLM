@@ -48,6 +48,29 @@ services:
       redis:
         condition: service_started
 
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: python -m app.worker
+    environment:
+      - DATABASE_URL=postgresql://atlaslm:${DB_PASSWORD:-atlaspass}@db:5432/atlaslm_db
+      - REDIS_URL=redis://redis:6379/0
+      - LANGDOCK_API_KEY=${LANGDOCK_API_KEY}
+      - LANGDOCK_ENDPOINT_URL=https://api.langdock.com/openai/eu/v1
+      - BLACKBOX_API_KEY=${BLACKBOX_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+      - ATLAS_ACTIVE_PROVIDER=${ATLAS_ACTIVE_PROVIDER}
+      - SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
   frontend:
     build:
       context: ./frontend

@@ -26,6 +26,8 @@ class Document(Base):
     file_type = Column(String(50), nullable=False) # 'pdf', 'txt', 'md', 'url'
     source_url = Column(String(2083), nullable=True)
     embedding_model = Column(String(120), nullable=True)
+    status = Column(String(20), nullable=False, default="ready", server_default="ready")
+    error_message = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     workspace = relationship("Workspace", back_populates="documents")
