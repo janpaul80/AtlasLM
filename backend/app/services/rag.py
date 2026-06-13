@@ -89,7 +89,8 @@ class RAGService:
             """
             SELECT dc.id, dc.content, dc.page_number, dc.chunk_index,
                    d.id AS document_id, d.filename,
-                   (dc.embedding <=> :query_vector) AS distance
+                   (dc.embedding <=> :query_vector) AS distance,
+                   dc.sheet, dc.timestamp
             FROM document_chunks dc
             JOIN documents d ON dc.document_id = d.id
             WHERE d.workspace_id = :workspace_id
@@ -129,6 +130,8 @@ class RAGService:
                     "document_id": row[4],
                     "filename": row[5],
                     "score": score,
+                    "sheet": row[7],
+                    "timestamp": row[8],
                 }
             )
         return matched_chunks
@@ -152,6 +155,8 @@ class RAGService:
                 "filename": chunk["filename"],
                 "page_number": chunk["page_number"],
                 "content": chunk["content"],
+                "sheet": chunk.get("sheet"),
+                "timestamp": chunk.get("timestamp"),
             }
             context_blocks.append(
                 f"--- START SOURCE {tag} "
@@ -354,3 +359,123 @@ class RAGService:
         except Exception as e:
             self.db.rollback()
             logger.error("Failed to persist assistant message: %s", e)
+
+
+# ------------------------------------------------------------------ #
+# Studio Helper Functions (Patch 002)
+# ------------------------------------------------------------------ #
+
+_studio_loop = None
+_studio_thread = None
+
+def get_studio_loop():
+    global _studio_loop, _studio_thread
+    import asyncio
+    import threading
+    if _studio_loop is None:
+        _studio_loop = asyncio.new_event_loop()
+        def run_loop():
+            asyncio.set_event_loop(_studio_loop)
+            _studio_loop.run_forever()
+        _studio_thread = threading.Thread(target=run_loop, daemon=True)
+        _studio_thread.start()
+    return _studio_loop
+
+
+def _run_coroutine_sync(coro):
+    import asyncio
+    loop = get_studio_loop()
+    future = asyncio.run_coroutine_threadsafe(coro, loop)
+    return future.result()
+
+
+def retrieve_chunks(notebook_id: str, query: str, source_ids: List[str], k: int) -> List[Dict[str, Any]]:
+    from app.core.database import SessionLocal
+    import uuid
+    from sqlalchemy import text
+    
+    # Resolve workspace ID
+    ws_id = uuid.UUID(notebook_id) if isinstance(notebook_id, str) else notebook_id
+    
+    async def _retrieve():
+        # RAGService embeds the query using the default provider.
+        from app.core.providers import provider_registry
+        embedding_provider = provider_registry.get_embeddings(None)
+        query_vector = await embedding_provider.embed_query(query)
+        return query_vector, embedding_provider.model_id
+
+    # Run embedding query synchronously and safely
+    query_vector, model_id = _run_coroutine_sync(_retrieve())
+        
+    vector_str = "[" + ",".join(map(str, query_vector)) + "]"
+    
+    db = SessionLocal()
+    try:
+        source_filter = ""
+        params = {
+            "query_vector": vector_str,
+            "workspace_id": ws_id,
+            "model_id": model_id,
+            "top_k": k,
+        }
+        if source_ids:
+            source_filter = "AND d.id IN :source_ids"
+            params["source_ids"] = tuple(uuid.UUID(sid) if isinstance(sid, str) else sid for sid in source_ids)
+
+        sql_query = text(
+            f"""
+            SELECT dc.id, dc.content, dc.page_number, dc.chunk_index,
+                   d.id AS document_id, d.filename,
+                   dc.sheet, dc.timestamp
+            FROM document_chunks dc
+            JOIN documents d ON dc.document_id = d.id
+            WHERE d.workspace_id = :workspace_id
+              {source_filter}
+              AND (d.embedding_model IS NULL OR d.embedding_model = :model_id)
+            ORDER BY dc.embedding <=> :query_vector ASC
+            LIMIT :top_k
+            """
+        )
+        results = db.execute(sql_query, params).fetchall()
+        
+        matched_chunks = []
+        for row in results:
+            matched_chunks.append({
+                "chunk_id": row[0],
+                "text": row[1],
+                "page": row[2],
+                "chunk_index": row[3],
+                "document_id": row[4],
+                "filename": row[5],
+                "sheet": row[6],
+                "timestamp": row[7],
+            })
+        return matched_chunks
+    finally:
+        db.close()
+
+
+def call_model(system: str, user: str, stream: bool = False) -> str:
+    from app.core.providers import provider_registry
+    
+    llm = provider_registry.get_llm(None)
+    
+    async def _run():
+        return await llm.generate(prompt=user, system_prompt=system)
+        
+    return _run_coroutine_sync(_run())
+
+
+def build_citation_map(chunks: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    citation_map = {}
+    for idx, chunk in enumerate(chunks):
+        tag = f"source_{idx + 1}"
+        citation_map[tag] = {
+            "filename": chunk.get("filename", "source"),
+            "page": chunk.get("page", "?"),
+            "text": chunk.get("text", ""),
+            "sheet": chunk.get("sheet"),
+            "timestamp": chunk.get("timestamp"),
+        }
+    return citation_map
+

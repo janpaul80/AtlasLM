@@ -356,3 +356,77 @@ class DocumentPipeline:
             filename, document.id, len(chunks_data), embedding_model_id,
         )
         return document
+
+    async def ingest_extracted_blocks(
+        self,
+        workspace_id: uuid.UUID,
+        filename: str,
+        file_type: str,
+        blocks: List[Dict[str, Any]],
+        source_url: Optional[str] = None,
+        provider_name: Optional[str] = None,
+    ) -> Document:
+        logger.info(
+            "Ingesting extracted blocks for '%s' into workspace %s", filename, workspace_id
+        )
+
+        # 1. Embed first
+        contents = [b["text"] for b in blocks]
+        embeddings = await self.generate_embeddings_with_retry(
+            contents=contents, provider_name=provider_name
+        )
+
+        if len(embeddings) != len(blocks):
+            raise ValueError(
+                "Embedding count mismatch during ingestion; aborting to protect data integrity."
+            )
+
+        embedding_model_id = provider_registry.get_embeddings(
+            provider_name
+        ).model_id
+
+        # 2. Persist document + chunks atomically
+        try:
+            document = Document(
+                id=uuid.uuid4(),
+                workspace_id=workspace_id,
+                filename=filename,
+                file_type=file_type,
+                source_url=source_url,
+                embedding_model=embedding_model_id,
+                status="ready",
+            )
+            self.db.add(document)
+            self.db.flush()
+
+            for idx, b in enumerate(blocks):
+                char_offset = b.get("char_offset", 0)
+                if char_offset is None:
+                    char_offset = 0
+                self.db.add(
+                    DocumentChunk(
+                        id=uuid.uuid4(),
+                        document_id=document.id,
+                        content=b["text"],
+                        embedding=embeddings[idx],
+                        page_number=b.get("page"),
+                        chunk_index=idx,
+                        char_start=char_offset,
+                        char_end=char_offset + len(b["text"]),
+                        sheet=b.get("sheet"),
+                        timestamp=b.get("timestamp"),
+                    )
+                )
+
+            self.db.commit()
+            self.db.refresh(document)
+        except Exception as e:
+            self.db.rollback()
+            logger.error("Ingestion persistence failure: %s", e, exc_info=True)
+            raise
+
+        logger.info(
+            "Ingestion successful: '%s' -> document %s (%d chunks, model=%s)",
+            filename, document.id, len(blocks), embedding_model_id,
+        )
+        return document
