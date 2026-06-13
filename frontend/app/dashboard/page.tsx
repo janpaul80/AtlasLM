@@ -5,6 +5,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import Logo from "../../components/brand/logo";
 import { apiClient } from "@/lib/apiClient";
+import { supabaseBrowser } from "@/lib/supabaseClient";
+import StudioPanel from "@/app/components/studio/StudioPanel";
 
 interface Workspace {
   id: string;
@@ -64,6 +66,7 @@ export default function Dashboard() {
   const [selectedCitation, setSelectedCitation] = useState<any | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [uiError, setUiError] = useState<string>("");
+  const [token, setToken] = useState<string>("");
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -150,6 +153,21 @@ export default function Dashboard() {
     fetchWorkspaces();
     restoreSession().catch(console.error);
     fetchProviders().catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    const fetchToken = async () => {
+      try {
+        const supabase = supabaseBrowser();
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          setToken(session.access_token);
+        }
+      } catch (err) {
+        console.error("Failed to fetch token", err);
+      }
+    };
+    fetchToken();
   }, []);
 
   // When workspace changes, fetch documents & sessions + save to localStorage
@@ -1057,8 +1075,17 @@ export default function Dashboard() {
             </motion.div>
           )}
         </AnimatePresence>
-        
       </aside>
+
+      {selectedWorkspace && (
+        <StudioPanel
+          notebookId={selectedWorkspace.id}
+          selectedSourceIds={sources
+            .filter((s) => s.status === "ready" || !s.status || (s.status as string) === "grounded")
+            .map((s) => s.id)}
+          token={token}
+        />
+      )}
 
     </div>
   );
