@@ -89,7 +89,8 @@ class RAGService:
             """
             SELECT dc.id, dc.content, dc.page_number, dc.chunk_index,
                    d.id AS document_id, d.filename,
-                   (dc.embedding <=> :query_vector) AS distance
+                   (dc.embedding <=> :query_vector) AS distance,
+                   dc.sheet, dc.timestamp
             FROM document_chunks dc
             JOIN documents d ON dc.document_id = d.id
             WHERE d.workspace_id = :workspace_id
@@ -129,6 +130,8 @@ class RAGService:
                     "document_id": row[4],
                     "filename": row[5],
                     "score": score,
+                    "sheet": row[7],
+                    "timestamp": row[8],
                 }
             )
         return matched_chunks
@@ -152,6 +155,8 @@ class RAGService:
                 "filename": chunk["filename"],
                 "page_number": chunk["page_number"],
                 "content": chunk["content"],
+                "sheet": chunk.get("sheet"),
+                "timestamp": chunk.get("timestamp"),
             }
             context_blocks.append(
                 f"--- START SOURCE {tag} "
@@ -420,7 +425,8 @@ def retrieve_chunks(notebook_id: str, query: str, source_ids: List[str], k: int)
         sql_query = text(
             f"""
             SELECT dc.id, dc.content, dc.page_number, dc.chunk_index,
-                   d.id AS document_id, d.filename
+                   d.id AS document_id, d.filename,
+                   dc.sheet, dc.timestamp
             FROM document_chunks dc
             JOIN documents d ON dc.document_id = d.id
             WHERE d.workspace_id = :workspace_id
@@ -441,6 +447,8 @@ def retrieve_chunks(notebook_id: str, query: str, source_ids: List[str], k: int)
                 "chunk_index": row[3],
                 "document_id": row[4],
                 "filename": row[5],
+                "sheet": row[6],
+                "timestamp": row[7],
             })
         return matched_chunks
     finally:
@@ -466,6 +474,8 @@ def build_citation_map(chunks: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]
             "filename": chunk.get("filename", "source"),
             "page": chunk.get("page", "?"),
             "text": chunk.get("text", ""),
+            "sheet": chunk.get("sheet"),
+            "timestamp": chunk.get("timestamp"),
         }
     return citation_map
 

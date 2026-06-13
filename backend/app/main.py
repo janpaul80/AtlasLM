@@ -55,8 +55,9 @@ app.add_middleware(AuthMiddleware)
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
-from .routes import studio
+from .routes import studio, sources
 app.include_router(studio.router)
+app.include_router(sources.router)
 
 
 @app.get("/", tags=["system"])

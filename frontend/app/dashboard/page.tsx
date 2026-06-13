@@ -7,6 +7,8 @@ import Logo from "../../components/brand/logo";
 import { apiClient } from "@/lib/apiClient";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 import StudioPanel from "@/app/components/studio/StudioPanel";
+import AddSourceModal from "@/app/components/sources/AddSourceModal";
+import { citationLabel } from "@/lib/sources";
 
 interface Workspace {
   id: string;
@@ -41,6 +43,7 @@ export default function Dashboard() {
   const [newWorkspaceName, setNewWorkspaceName] = useState("");
   
   const [sources, setSources] = useState<DocumentSource[]>([]);
+  const [showAddSource, setShowAddSource] = useState(false);
   const hasReadySources = sources.some((src) => src.status === "ready" || !src.status || (src.status as string) === "grounded");
   const [activeSourceTab, setActiveSourceTab] = useState<SourceTab>("files");
   const [urlInput, setUrlInput] = useState("");
@@ -817,124 +820,17 @@ export default function Dashboard() {
         {/* Source ingestion area */}
         <div className="flex flex-col gap-3">
           <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Sources Library</span>
-          
-          <input
-            type="file"
-            ref={fileInputRef}
-            className="hidden"
-            accept=".pdf,.txt,.md,.docx,.csv,.xlsx,.pptx"
-            onChange={handleFileUpload}
-          />
-          
-          <div className="grid grid-cols-3 gap-1.5">
-            {[
-              { id: "files", label: "Files", status: "Ready" },
-              { id: "website", label: "Website", status: "Ready" },
-              { id: "paste", label: "Paste Text", status: "Ready" },
-            ].map((source) => {
-              const isActive = activeSourceTab === source.id;
-              const isReady = source.status === "Ready";
-              return (
-                <button
-                  key={source.id}
-                  type="button"
-                  onClick={() => setActiveSourceTab(source.id as SourceTab)}
-                  className={`rounded-lg border px-2 py-2 text-left transition-colors ${
-                    isActive
-                      ? "border-orange-500/40 bg-orange-950/15"
-                      : "border-zinc-900 bg-zinc-950/30 hover:border-zinc-800"
-                  }`}
-                >
-                  <span className="block text-[10px] font-bold text-white truncate">{source.label}</span>
-                  <span className={`block text-[8px] font-bold uppercase tracking-wider mt-0.5 ${isReady ? "text-orange-500" : "text-zinc-600"}`}>
-                    {source.status}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-
-          {activeSourceTab === "files" && (
-            <div
-              onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-zinc-900 hover:border-orange-500/40 rounded-xl p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-colors group"
+          {selectedWorkspace ? (
+            <button
+              onClick={() => setShowAddSource(true)}
+              className="w-full py-3 px-4 rounded-xl border border-dashed border-zinc-800 bg-zinc-900/40 text-[11px] font-bold uppercase tracking-wider text-orange-500 hover:border-orange-500/40 hover:bg-orange-950/5 transition-all text-center cursor-pointer flex items-center justify-center gap-2 group"
             >
               <UploadIcon />
-              <h4 className="text-xs font-bold text-white mt-3 mb-1">Add Source Files</h4>
-              <p className="text-[10px] text-zinc-550">PDF, DOCX, XLSX, PPTX, TXT, MD, CSV files up to 50MB</p>
-            </div>
+              <span>Add Source</span>
+            </button>
+          ) : (
+            <p className="text-[10px] text-zinc-650">Select a notebook to add sources.</p>
           )}
-
-          {activeSourceTab === "website" && (
-            <form onSubmit={handleURLIngest} className="flex flex-col gap-2">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
-                Website URL
-              </label>
-              <div className="flex items-center gap-2">
-                <div className="relative flex-1 min-w-0">
-                  <span className="absolute left-3">
-                    <GlobeIcon />
-                  </span>
-                  <input
-                    type="url"
-                    placeholder="https://example.com/research"
-                    required
-                    value={urlInput}
-                    onChange={(e) => setUrlInput(e.target.value)}
-                    className="w-full bg-zinc-900/40 border border-zinc-850 rounded-lg py-2.5 pl-9 pr-3 text-[10px] text-zinc-200 placeholder-zinc-650 focus:outline-none focus:border-zinc-700 transition-colors"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  className="shrink-0 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2.5 text-[10px] font-bold uppercase tracking-wider text-orange-400 hover:bg-zinc-800 hover:text-orange-300 transition-colors cursor-pointer"
-                >
-                  Add
-                </button>
-              </div>
-              <p className="text-[9px] text-zinc-600">Adds a single web page as a grounded notebook source.</p>
-            </form>
-          )}
-
-          {activeSourceTab === "paste" && (
-            <form onSubmit={handleTextIngest} className="flex flex-col gap-2">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
-                Copied Text
-              </label>
-              <input
-                type="text"
-                placeholder="Source title"
-                value={pasteTitle}
-                onChange={(e) => setPasteTitle(e.target.value)}
-                className="w-full bg-zinc-900/40 border border-zinc-850 rounded-lg py-2.5 px-3 text-[10px] text-zinc-200 placeholder-zinc-650 focus:outline-none focus:border-zinc-700 transition-colors"
-              />
-              <textarea
-                placeholder="Paste notes, transcript excerpts, article text, or research material..."
-                required
-                value={pasteContent}
-                onChange={(e) => setPasteContent(e.target.value)}
-                className="w-full h-28 resize-none bg-zinc-900/40 border border-zinc-850 rounded-lg p-3 text-[10px] leading-relaxed text-zinc-200 placeholder-zinc-650 focus:outline-none focus:border-zinc-700 transition-colors"
-              />
-              <button
-                type="submit"
-                disabled={!pasteContent.trim()}
-                className="w-full bg-white text-zinc-950 disabled:opacity-30 disabled:pointer-events-none rounded-lg py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-zinc-200 transition-colors cursor-pointer"
-              >
-                Add pasted text
-              </button>
-            </form>
-          )}
-
-          <div className="rounded-xl border border-zinc-900 bg-zinc-950/30 p-4 flex flex-col gap-2">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Next source types</span>
-            <div className="flex flex-wrap gap-1.5">
-              <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-600 border border-zinc-800 rounded px-2 py-1">YouTube</span>
-              <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-600 border border-zinc-800 rounded px-2 py-1">Audio</span>
-              <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-600 border border-zinc-800 rounded px-2 py-1">Image</span>
-            </div>
-            <p className="text-[10px] text-zinc-500 leading-relaxed">
-              Planned AtlasLM source types. These are in roadmap preview and will be enabled after end-to-end ingestion, grounding, and citation support is completed.
-            </p>
-          </div>
         </div>
 
         {/* Uploading progress states */}
@@ -1055,18 +951,11 @@ export default function Dashboard() {
               <div className="flex flex-col gap-1">
                 <span className="text-[11px] text-white font-semibold truncate">{selectedCitation.filename}</span>
                 <span className="text-[9px] text-zinc-550">
-                  {(() => {
-                    const fn = selectedCitation.filename?.toLowerCase() || "";
-                    if (fn.endsWith('.pdf')) {
-                      return `Page ${selectedCitation.page_number}`;
-                    } else if (fn.endsWith('.pptx')) {
-                      return `Slide ${selectedCitation.page_number}`;
-                    } else if (fn.endsWith('.docx') || fn.endsWith('.csv') || fn.endsWith('.xlsx') || fn.endsWith(' (web)')) {
-                      return `Section ${selectedCitation.page_number}`;
-                    } else {
-                      return `Page ${selectedCitation.page_number}`; // fallback
-                    }
-                  })()}
+                  {citationLabel({
+                    page: selectedCitation.page_number,
+                    sheet: selectedCitation.sheet,
+                    timestamp: selectedCitation.timestamp,
+                  })}
                 </span>
               </div>
               <p className="text-[10px] text-zinc-300 leading-relaxed bg-zinc-950/80 border border-zinc-900 rounded p-2.5 max-h-[120px] overflow-y-auto font-sans">
@@ -1084,6 +973,18 @@ export default function Dashboard() {
             .filter((s) => s.status === "ready" || !s.status || (s.status as string) === "grounded")
             .map((s) => s.id)}
           token={token}
+        />
+      )}
+
+      {showAddSource && selectedWorkspace && (
+        <AddSourceModal
+          notebookId={selectedWorkspace.id}
+          token={token}
+          onClose={() => setShowAddSource(false)}
+          onAdded={() => {
+            setShowAddSource(false);
+            fetchDocuments(selectedWorkspace.id);
+          }}
         />
       )}
 

@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, Integer, ForeignKey, DateTime, Text, JSON
+from sqlalchemy import Column, String, Integer, ForeignKey, DateTime, Text, JSON, Float
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -46,6 +46,8 @@ class DocumentChunk(Base):
     chunk_index = Column(Integer, nullable=False)
     char_start = Column(Integer, nullable=True)
     char_end = Column(Integer, nullable=True)
+    sheet = Column(String(100), nullable=True)
+    timestamp = Column(Float, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     document = relationship("Document", back_populates="chunks")

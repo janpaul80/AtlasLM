@@ -1,0 +1,56 @@
+// frontend/lib/sources.ts
+export type SourceKind =
+  | "pdf" | "docx" | "pptx" | "xlsx" | "image" | "audio" | "youtube" | "web";
+
+export const SOURCE_TYPES = [
+  { id: "pdf",   label: "PDF",         accept: ".pdf",            color: "#EF4444", status: "live", pipeline: "PyMuPDF page-by-page" },
+  { id: "docx",  label: "Word",        accept: ".docx",           color: "#2563EB", status: "new",  pipeline: "Paragraphs + tables" },
+  { id: "pptx",  label: "PowerPoint",  accept: ".pptx",           color: "#EA580C", status: "new",  pipeline: "Per-slide text + notes" },
+  { id: "xlsx",  label: "Excel / CSV", accept: ".xlsx,.csv",      color: "#16A34A", status: "new",  pipeline: "Per-sheet rows" },
+  { id: "image", label: "Image (OCR)", accept: ".png,.jpg,.jpeg", color: "#A855F7", status: "new",  pipeline: "Tesseract OCR" },
+  { id: "audio", label: "Audio",       accept: ".mp3,.wav,.m4a",  color: "#EC4899", status: "new",  pipeline: "Offline Whisper transcript" },
+  { id: "youtube", label: "YouTube",   accept: "url",             color: "#DC2626", status: "new",  pipeline: "Captions first, Whisper fallback" },
+  { id: "web",   label: "Website",     accept: "url",             color: "#0EA5E9", status: "live", pipeline: "Readable text crawl" },
+] as const;
+
+const API = process.env.NEXT_PUBLIC_API_BASE ?? "";
+
+export async function uploadSource(
+  notebookId: string, file: File, token: string,
+) {
+  const fd = new FormData();
+  fd.append("notebook_id", notebookId);
+  fd.append("file", file);
+  const res = await fetch(`${API}/api/sources/upload`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: fd,
+  });
+  if (!res.ok) throw new Error("AtlasLM could not ingest this source.");
+  return res.json();
+}
+
+export async function addUrlSource(
+  notebookId: string, url: string, token: string,
+) {
+  const res = await fetch(`${API}/api/sources/url`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ notebook_id: notebookId, url }),
+  });
+  if (!res.ok) throw new Error("AtlasLM could not ingest this URL.");
+  return res.json();
+}
+
+/** Format a chunk citation label: timestamp for audio/yt, else page/sheet. */
+export function citationLabel(meta: { page?: number; sheet?: string; timestamp?: number }) {
+  if (meta.timestamp != null) {
+    const s = Math.floor(meta.timestamp);
+    const mm = String(Math.floor(s / 60)).padStart(2, "0");
+    const ss = String(s % 60).padStart(2, "0");
+    return `${mm}:${ss}`;
+  }
+  if (meta.sheet) return `Sheet ${meta.sheet}`;
+  if (meta.page != null) return `p.${meta.page}`;
+  return "";
+}
