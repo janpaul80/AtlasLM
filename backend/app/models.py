@@ -16,6 +16,7 @@ class Workspace(Base):
     
     documents = relationship("Document", back_populates="workspace", cascade="all, delete-orphan")
     chat_sessions = relationship("ChatSession", back_populates="workspace", cascade="all, delete-orphan")
+    studio_outputs = relationship("StudioOutput", back_populates="workspace", cascade="all, delete-orphan")
 
 class Document(Base):
     __tablename__ = "documents"
@@ -75,3 +76,24 @@ class ChatMessage(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     session = relationship("ChatSession", back_populates="messages")
+
+class StudioOutput(Base):
+    __tablename__ = "studio_outputs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    output_type = Column(String(50), nullable=False)   # 'report', 'executive_summary', ...
+    title = Column(String(255), nullable=False)
+    content = Column(Text, nullable=True)              # Markdown
+    citations = Column(JSON, nullable=True)            # same structure as ChatMessage.citations
+    document_ids = Column(JSON, nullable=True)         # optional source subset (list of UUID strings)
+    status = Column(String(20), nullable=False, default="pending", server_default="pending")
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    workspace = relationship("Workspace", back_populates="studio_outputs")
+

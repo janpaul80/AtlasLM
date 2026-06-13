@@ -25,7 +25,7 @@ import uuid
 from .core.database import SessionLocal
 from .core.providers import ProviderError
 from .models import Document
-from .services.jobs import pop_ingestion_job, redis_healthy
+from .services.jobs import pop_ingestion_job, pop_studio_job, redis_healthy
 from .services.pipeline import DocumentPipeline
 
 logging.basicConfig(
@@ -99,6 +99,23 @@ async def process_job(job: dict) -> None:
         db.close()
 
 
+async def process_studio_job(job: dict) -> None:
+    """Runs Studio generation for one output. Own DB session per job."""
+    from .services.studio import StudioService
+
+    output_id = job.get("output_id")
+    db = SessionLocal()
+    try:
+        service = StudioService(db)
+        await service.generate(uuid.UUID(output_id))
+    except Exception as e:
+        logger.error("Studio job %s failed: %s", output_id, e, exc_info=True)
+        # StudioService.generate marks the row failed itself; this is the
+        # last-resort guard so the worker loop never dies.
+    finally:
+        db.close()
+
+
 async def main() -> None:
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
@@ -109,18 +126,23 @@ async def main() -> None:
     logger.info("AtlasLM ingestion worker started.")
     while not _shutdown:
         try:
-            job = await asyncio.to_thread(pop_ingestion_job, 5)
+            job = await asyncio.to_thread(pop_ingestion_job, 3)
+            if job:
+                await process_job(job)
+                continue
+
+            studio_job = await asyncio.to_thread(pop_studio_job, 2)
+            if studio_job:
+                await process_studio_job(studio_job)
+                continue
         except Exception as e:
             logger.error("Queue pop failure: %s; retrying in 5s.", e)
             await asyncio.sleep(5)
             continue
-
-        if job is None:
-            continue
-        await process_job(job)
 
     logger.info("Worker shut down cleanly.")
 
 
 if __name__ == "__main__":
     asyncio.run(main())
+

@@ -89,3 +89,24 @@ class TextIngestRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=180)
     content: str = Field(..., min_length=1)
     provider: Optional[str] = None
+
+class StudioOutputCreate(BaseModel):
+    output_type: str
+    title: Optional[str] = None
+    document_ids: Optional[List[UUID]] = None  # None = whole notebook
+
+class StudioOutputOut(BaseModel):
+    id: UUID
+    workspace_id: UUID
+    output_type: str
+    title: str
+    content: Optional[str] = None
+    citations: Optional[List[dict]] = None
+    document_ids: Optional[List[str]] = None
+    status: str
+    error_message: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
