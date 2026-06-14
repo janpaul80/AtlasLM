@@ -32,6 +32,9 @@ logging.basicConfig(
     level=logging.INFO,
     format="[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s",
 )
+# Suppress httpx request logger to prevent provider URL leaks in logs (T11)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 logger = logging.getLogger("atlaslm.worker")
 
 _shutdown = False

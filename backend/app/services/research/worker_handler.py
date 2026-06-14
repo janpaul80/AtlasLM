@@ -55,4 +55,5 @@ def handle_research_queue(poll_timeout: int = 5) -> None:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     handle_research_queue()

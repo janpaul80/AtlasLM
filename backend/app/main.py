@@ -1,4 +1,6 @@
 import logging
+# Suppress httpx request logger to prevent provider URL leaks in logs (T11)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 import uvicorn
 from fastapi import FastAPI
