@@ -361,10 +361,11 @@ class DocumentPipeline:
         self,
         workspace_id: uuid.UUID,
         filename: str,
-        file_type: str,
-        blocks: List[Dict[str, Any]],
+        file_type: Optional[str] = None,
+        blocks: List[Dict[str, Any]] = [],
         source_url: Optional[str] = None,
         provider_name: Optional[str] = None,
+        source_type: Optional[str] = None,
     ) -> Document:
         logger.info(
             "Ingesting extracted blocks for '%s' into workspace %s", filename, workspace_id
@@ -385,16 +386,32 @@ class DocumentPipeline:
             provider_name
         ).model_id
 
+        # Extract provenance from block metadata if present
+        meta = blocks[0].get("meta") if (blocks and isinstance(blocks[0], dict)) else None
+        origin = None
+        source_label = None
+        external_url = None
+        research_query = None
+        if meta:
+            origin = meta.get("origin")
+            source_label = meta.get("source_label")
+            external_url = meta.get("url")
+            research_query = meta.get("query")
+
         # 2. Persist document + chunks atomically
         try:
             document = Document(
                 id=uuid.uuid4(),
                 workspace_id=workspace_id,
                 filename=filename,
-                file_type=file_type,
-                source_url=source_url,
+                file_type=file_type or source_type or "unknown",
+                source_url=source_url or external_url,
                 embedding_model=embedding_model_id,
                 status="ready",
+                origin=origin,
+                source_label=source_label,
+                external_url=external_url,
+                research_query=research_query,
             )
             self.db.add(document)
             self.db.flush()

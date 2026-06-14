@@ -123,6 +123,11 @@ async def main() -> None:
     if not redis_healthy():
         logger.warning("Redis not reachable at startup; will keep retrying.")
 
+    # Start the deep research worker queue thread
+    import threading
+    from .services.research.worker_handler import handle_research_queue
+    threading.Thread(target=handle_research_queue, daemon=True).start()
+
     logger.info("AtlasLM ingestion worker started.")
     while not _shutdown:
         try:

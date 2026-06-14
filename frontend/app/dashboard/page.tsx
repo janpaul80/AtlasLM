@@ -8,7 +8,9 @@ import { apiClient } from "@/lib/apiClient";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 import StudioPanel from "@/app/components/studio/StudioPanel";
 import AddSourceModal from "@/app/components/sources/AddSourceModal";
+import DeepResearchDrawer from "@/app/components/research/DeepResearchDrawer";
 import { citationLabel } from "@/lib/sources";
+import "@/app/components/research/deep-research.css";
 
 interface Workspace {
   id: string;
@@ -44,6 +46,7 @@ export default function Dashboard() {
   
   const [sources, setSources] = useState<DocumentSource[]>([]);
   const [showAddSource, setShowAddSource] = useState(false);
+  const [drOpen, setDrOpen] = useState(false);
   const hasReadySources = sources.some((src) => src.status === "ready" || !src.status || (src.status as string) === "grounded");
   const [activeSourceTab, setActiveSourceTab] = useState<SourceTab>("files");
   const [urlInput, setUrlInput] = useState("");
@@ -1079,13 +1082,21 @@ export default function Dashboard() {
         <div className="flex flex-col gap-3">
           <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Sources Library</span>
           {selectedWorkspace ? (
-            <button
-              onClick={() => setShowAddSource(true)}
-              className="w-full py-3 px-4 rounded-xl border border-dashed border-zinc-800 bg-zinc-900/40 text-[11px] font-bold uppercase tracking-wider text-orange-500 hover:border-orange-500/40 hover:bg-orange-950/5 transition-all text-center cursor-pointer flex items-center justify-center gap-2 group"
-            >
-              <UploadIcon />
-              <span>Add Source</span>
-            </button>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => setShowAddSource(true)}
+                className="w-full py-3 px-4 rounded-xl border border-dashed border-zinc-800 bg-zinc-900/40 text-[11px] font-bold uppercase tracking-wider text-orange-500 hover:border-orange-500/40 hover:bg-orange-950/5 transition-all text-center cursor-pointer flex items-center justify-center gap-2 group"
+              >
+                <UploadIcon />
+                <span>Add Source</span>
+              </button>
+              <button
+                onClick={() => setDrOpen(true)}
+                className="w-full py-3 px-4 rounded-xl border border-dashed border-zinc-800 bg-zinc-900/40 text-[11px] font-bold uppercase tracking-wider text-zinc-400 hover:border-zinc-700 hover:bg-zinc-900/60 transition-all text-center cursor-pointer flex items-center justify-center gap-2 group"
+              >
+                🔭 Deep Research
+              </button>
+            </div>
           ) : (
             <p className="text-[10px] text-zinc-650">Select a notebook to add sources.</p>
           )}
@@ -1213,6 +1224,10 @@ export default function Dashboard() {
                     page: selectedCitation.page_number,
                     sheet: selectedCitation.sheet,
                     timestamp: selectedCitation.timestamp,
+                    origin: selectedCitation.origin,
+                    source_label: selectedCitation.source_label,
+                    external_url: selectedCitation.external_url,
+                    venue: selectedCitation.venue,
                   })}
                 </span>
               </div>
@@ -1241,6 +1256,18 @@ export default function Dashboard() {
           onClose={() => setShowAddSource(false)}
           onAdded={() => {
             setShowAddSource(false);
+            fetchDocuments(selectedWorkspace.id);
+          }}
+        />
+      )}
+
+      {drOpen && selectedWorkspace && (
+        <DeepResearchDrawer
+          open={drOpen}
+          onClose={() => setDrOpen(false)}
+          workspaceId={selectedWorkspace.id}
+          token={token}
+          onIngested={() => {
             fetchDocuments(selectedWorkspace.id);
           }}
         />

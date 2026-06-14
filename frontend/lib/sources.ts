@@ -43,7 +43,25 @@ export async function addUrlSource(
 }
 
 /** Format a chunk citation label: timestamp for audio/yt, else page/sheet. */
-export function citationLabel(meta: { page?: number; sheet?: string; timestamp?: number }) {
+export function citationLabel(meta: {
+  page?: number;
+  sheet?: string;
+  timestamp?: number;
+  origin?: string;
+  source_label?: string;
+  external_url?: string;
+  venue?: string;
+}) {
+  if (meta.origin === "deep_research") {
+    if (meta.source_label === "Web" && meta.external_url) {
+      try {
+        return `Web · ${new URL(meta.external_url).hostname}`;
+      } catch (e) {
+        return `Web`;
+      }
+    }
+    return meta.venue || meta.source_label || "Deep Research";
+  }
   if (meta.timestamp != null) {
     const s = Math.floor(meta.timestamp);
     const mm = String(Math.floor(s / 60)).padStart(2, "0");

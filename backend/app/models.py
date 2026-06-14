@@ -31,6 +31,12 @@ class Document(Base):
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
+    # Provenance fields for Deep Research
+    origin = Column(String, nullable=True)             # 'deep_research' | NULL
+    source_label = Column(String, nullable=True)       # 'Web' | 'arXiv' | 'Crossref'
+    external_url = Column(String, nullable=True)
+    research_query = Column(String, nullable=True)
+    
     workspace = relationship("Workspace", back_populates="documents")
     chunks = relationship("DocumentChunk", back_populates="document", cascade="all, delete-orphan")
 

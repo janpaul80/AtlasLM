@@ -23,6 +23,11 @@ from fastapi.encoders import jsonable_encoder
 from ..services.studio import StudioService, OUTPUT_TYPES
 from ..models import StudioOutput
 from ..schemas import StudioOutputCreate, StudioOutputOut
+from ..services.research.service import DeepResearchService
+from ..services.research import jobs as research_jobs
+from pydantic import BaseModel
+
+_research = DeepResearchService()
 
 
 router = APIRouter()
@@ -660,4 +665,93 @@ def delete_studio_output(
     db.delete(out)
     db.commit()
     return
+
+
+# ---- Deep Research schemas --------------------------------------------------
+class ResearchSearchRequest(BaseModel):
+    query: str
+    web: bool = True
+    academic: bool = True
+    limit: int = 8
+
+
+class ResearchIngestRequest(BaseModel):
+    query: str
+    results: List[dict]              # the picked ResearchResult dicts from search
+    fetch_full_text: bool = True
+
+
+# ---- POST /api/v1/workspaces/{workspace_id}/research/search ---------------
+@router.post("/workspaces/{workspace_id}/research/search")
+def research_search(
+    workspace_id: uuid.UUID,
+    body: ResearchSearchRequest,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    uid = current_user_id(request)
+    _get_owned_workspace(workspace_id, uid, db)
+    
+    if not body.query.strip():
+        raise HTTPException(400, "query is required")
+        
+    # enqueue for traceability (mirrors Studio queue pattern), run inline (fast)
+    job_id = research_jobs.enqueue("search", {
+        "workspace_id": str(workspace_id), "query": body.query,
+        "web": body.web, "academic": body.academic,
+    })
+    try:
+        results = _research.search(
+            body.query, web=body.web, academic=body.academic, limit=body.limit)
+        research_jobs.set_status(job_id, "done", {"count": len(results)})
+    except Exception as e:                           # noqa: BLE001
+        research_jobs.set_status(job_id, "error", {"error": "search failed"})
+        raise HTTPException(502, "Deep Research search is temporarily unavailable")
+    return {"job_id": job_id, "query": body.query, "results": results}
+
+
+# ---- POST /api/v1/workspaces/{workspace_id}/research/ingest --------------
+@router.post("/workspaces/{workspace_id}/research/ingest")
+def research_ingest(
+    workspace_id: uuid.UUID,
+    body: ResearchIngestRequest,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    uid = current_user_id(request)
+    _get_owned_workspace(workspace_id, uid, db)
+    
+    if not body.results:
+        raise HTTPException(400, "no results selected")
+        
+    # heavy full-text fetch -> enqueue so the request returns immediately
+    job_id = research_jobs.enqueue("ingest", {
+        "workspace_id": str(workspace_id), "query": body.query,
+        "results": body.results, "fetch_full_text": body.fetch_full_text,
+    })
+    return {"job_id": job_id, "status": "pending",
+            "queued": len(body.results)}
+
+
+# ---- GET /api/v1/research/jobs/{job_id} ----------------------------------
+@router.get("/research/jobs/{job_id}")
+def research_job_status(
+    job_id: str,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    uid = current_user_id(request)
+    job = research_jobs.get_job(job_id)
+    if not job:
+        raise HTTPException(404, "job not found")
+        
+    payload = job.get("payload")
+    if payload and "workspace_id" in payload:
+        try:
+            ws_id = uuid.UUID(payload["workspace_id"])
+            _get_owned_workspace(ws_id, uid, db)
+        except Exception:
+            raise HTTPException(status_code=404, detail="job not found")
+            
+    return job
 

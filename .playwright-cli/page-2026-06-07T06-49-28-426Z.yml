@@ -1,0 +1,36 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - link "Atlas LM" [ref=e5] [cursor=pointer]:
+        - /url: /
+        - img "Atlas LM" [ref=e7]
+      - generic [ref=e8]:
+        - heading "Welcome Back" [level=1] [ref=e9]
+        - paragraph [ref=e10]: Enter your credentials to access your workspaces.
+    - generic [ref=e11]:
+      - button "Continue with Google" [ref=e12]:
+        - img [ref=e13]
+        - text: Continue with Google
+      - button "Continue with GitHub" [ref=e18]:
+        - img [ref=e19]
+        - text: Continue with GitHub
+    - generic [ref=e23]: or continue with email
+    - generic [ref=e25]:
+      - generic [ref=e26]:
+        - generic [ref=e27]: Email Address
+        - textbox "Email Address" [ref=e28]:
+          - /placeholder: name@domain.com
+      - generic [ref=e29]:
+        - generic [ref=e30]:
+          - generic [ref=e31]: Password
+          - link "Forgot password?" [ref=e32] [cursor=pointer]:
+            - /url: /login
+        - textbox "Password" [ref=e33]:
+          - /placeholder: ••••••••
+      - button "Sign In" [ref=e34]
+    - paragraph [ref=e35]:
+      - text: Don't have an account?
+      - link "Sign up" [ref=e36] [cursor=pointer]:
+        - /url: /signup
+  - button "Open Next.js Dev Tools" [ref=e42] [cursor=pointer]:
+    - img [ref=e43]

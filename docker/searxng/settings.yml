@@ -1,0 +1,10 @@
+# docker/searxng/settings.yml  (mounted to /etc/searxng/settings.yml)
+# Minimal config: enable the JSON format so the backend can parse results.
+use_default_settings: true
+server:
+  secret_key: "change-me-in-env"     # override via SEARXNG_SECRET
+  limiter: false
+search:
+  formats:
+    - html
+    - json            # <-- REQUIRED for the AtlasLM adapter
