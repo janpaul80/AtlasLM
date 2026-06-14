@@ -1,6 +1,7 @@
 import uuid
-from sqlalchemy import Column, String, Integer, ForeignKey, DateTime, Text, JSON, Float
+from sqlalchemy import Column, String, Integer, ForeignKey, DateTime, Text, JSON, Float, Boolean, UniqueConstraint, CheckConstraint
 from sqlalchemy.dialects.postgresql import UUID
+from datetime import datetime
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from pgvector.sqlalchemy import Vector
@@ -102,4 +103,39 @@ class StudioOutput(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     workspace = relationship("Workspace", back_populates="studio_outputs")
+
+
+class WorkspaceGraphEdge(Base):
+    """A user-drawn connection between two source nodes on the research canvas."""
+    __tablename__ = "workspace_graph"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "from_document_id", "to_document_id", name="unique_edge"),
+        CheckConstraint("from_document_id <> to_document_id", name="no_self_edge"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    from_document_id = Column(UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    to_document_id = Column(UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+
+
+class CanvasPosition(Base):
+    """Persisted x/y of a document node on the canvas."""
+    __tablename__ = "canvas_positions"
+
+    document_id = Column(UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True)
+    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    x_pos = Column(Float, nullable=False, default=0.0)
+    y_pos = Column(Float, nullable=False, default=0.0)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class UserProfile(Base):
+    """Stores user specific profile settings such as onboarding flags."""
+    __tablename__ = "user_profiles"
+
+    user_id = Column(String(255), primary_key=True)
+    tour_completed = Column(Boolean, nullable=False, default=False)
+    marketing_opt_in = Column(Boolean, nullable=False, default=False)
 

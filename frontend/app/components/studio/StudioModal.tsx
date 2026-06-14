@@ -67,7 +67,7 @@ export default function StudioModal({
                 className="h-7 w-7 rounded-full border-2 animate-spin"
                 style={{ borderColor: `${ORANGE}40`, borderTopColor: ORANGE }}
               />
-              <p className="text-sm">Generating {TITLES[type].toLowerCase()} from your sources…</p>
+              <p className="text-sm">Generating {TITLES[type].toLowerCase()} from your sources...</p>
             </div>
           )}
 

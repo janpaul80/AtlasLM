@@ -41,7 +41,7 @@ async function authHeaders(
   };
 }
 
-/** GET – authenticated JSON request. */
+/** GET  -  authenticated JSON request. */
 async function get<T = unknown>(path: string): Promise<T> {
   const headers = await authHeaders({ "Content-Type": "application/json" });
   const res = await fetch(`${API_URL}${path}`, { headers });
@@ -52,7 +52,7 @@ async function get<T = unknown>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-/** POST – authenticated JSON request. */
+/** POST  -  authenticated JSON request. */
 async function post<T = unknown>(path: string, body: unknown): Promise<T> {
   const headers = await authHeaders({ "Content-Type": "application/json" });
   const res = await fetch(`${API_URL}${path}`, {
@@ -67,12 +67,12 @@ async function post<T = unknown>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-/** POST – multipart/form-data (file upload). No Content-Type header; browser sets boundary. */
+/** POST  -  multipart/form-data (file upload). No Content-Type header; browser sets boundary. */
 async function postForm<T = unknown>(
   path: string,
   formData: FormData
 ): Promise<T> {
-  const headers = await authHeaders(); // no Content-Type – browser auto-sets it with boundary
+  const headers = await authHeaders(); // no Content-Type  -  browser auto-sets it with boundary
   const res = await fetch(`${API_URL}${path}`, {
     method: "POST",
     headers,
@@ -85,7 +85,7 @@ async function postForm<T = unknown>(
   return res.json() as Promise<T>;
 }
 
-/** DELETE – authenticated request. */
+/** DELETE  -  authenticated request. */
 async function del(path: string): Promise<void> {
   const headers = await authHeaders();
   const res = await fetch(`${API_URL}${path}`, {
@@ -99,7 +99,7 @@ async function del(path: string): Promise<void> {
 }
 
 /**
- * POST + stream – for SSE/streaming endpoints.
+ * POST + stream  -  for SSE/streaming endpoints.
  * Returns the raw `Response` so the caller can read it as an SSE stream.
  */
 async function stream(path: string, body: unknown): Promise<Response> {
@@ -117,7 +117,7 @@ async function stream(path: string, body: unknown): Promise<Response> {
 }
 
 /**
- * POST + raw response – returns the raw `Response` object instead of deserializing it.
+ * POST + raw response  -  returns the raw `Response` object instead of deserializing it.
  */
 async function postRaw(path: string, body: unknown): Promise<Response> {
   const headers = await authHeaders({ "Content-Type": "application/json" });
@@ -128,5 +128,38 @@ async function postRaw(path: string, body: unknown): Promise<Response> {
   });
 }
 
-export const apiClient = { get, post, postForm, del, stream, postRaw };
+/** PATCH  -  authenticated JSON request. */
+async function patch<T = unknown>(path: string, body: unknown): Promise<T> {
+  const headers = await authHeaders({ "Content-Type": "application/json" });
+  const res = await fetch(`${API_URL}${path}`, {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`PATCH ${path} → ${res.status}: ${text}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+/** PUT  -  authenticated JSON request. Handles 204 No Content safely. */
+async function put<T = unknown>(path: string, body: unknown): Promise<T> {
+  const headers = await authHeaders({ "Content-Type": "application/json" });
+  const res = await fetch(`${API_URL}${path}`, {
+    method: "PUT",
+    headers,
+    body: JSON.stringify(body),
+  });
+  if (!res.ok && res.status !== 204) {
+    const text = await res.text();
+    throw new Error(`PUT ${path} → ${res.status}: ${text}`);
+  }
+  if (res.status === 204) {
+    return {} as T;
+  }
+  return res.json() as Promise<T>;
+}
+
+export const apiClient = { get, post, postForm, del, stream, postRaw, patch, put };
 

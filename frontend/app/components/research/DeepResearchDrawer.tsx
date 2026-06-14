@@ -111,7 +111,7 @@ export default function DeepResearchDrawer({
           {phase === "idle" && !error && (
             <div className="dr-empty">Enter a research question to search beyond your notebook.</div>
           )}
-          {phase === "searching" && <div className="dr-empty">Searching…</div>}
+          {phase === "searching" && <div className="dr-empty">Searching...</div>}
           {(phase === "results" || phase === "ingesting") && results.map((r) => (
             <button key={r.id} className={`dr-card ${selected[r.id] ? "on" : ""}`}
               onClick={() => toggle(r.id)}>
@@ -130,7 +130,7 @@ export default function DeepResearchDrawer({
           <footer className="dr-foot">
             <span>{selectedCount} selected · ingested as labeled Deep Research sources</span>
             <button disabled={!selectedCount || phase === "ingesting"} onClick={ingestSelected}>
-              {phase === "ingesting" ? "Ingesting…" : "Add to notebook"}
+              {phase === "ingesting" ? "Ingesting..." : "Add to notebook"}
             </button>
           </footer>
         )}

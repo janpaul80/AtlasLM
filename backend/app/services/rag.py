@@ -90,7 +90,7 @@ class RAGService:
             SELECT dc.id, dc.content, dc.page_number, dc.chunk_index,
                    d.id AS document_id, d.filename,
                    (dc.embedding <=> :query_vector) AS distance,
-                   dc.sheet, dc.timestamp
+                   dc.sheet, dc.timestamp, d.source_url, d.file_type
             FROM document_chunks dc
             JOIN documents d ON dc.document_id = d.id
             WHERE d.workspace_id = :workspace_id
@@ -132,6 +132,8 @@ class RAGService:
                     "score": score,
                     "sheet": row[7],
                     "timestamp": row[8],
+                    "source_url": row[9],
+                    "file_type": row[10],
                 }
             )
         return matched_chunks
@@ -157,6 +159,8 @@ class RAGService:
                 "content": chunk["content"],
                 "sheet": chunk.get("sheet"),
                 "timestamp": chunk.get("timestamp"),
+                "source_url": chunk.get("source_url"),
+                "file_type": chunk.get("file_type"),
             }
             context_blocks.append(
                 f"--- START SOURCE {tag} "
@@ -186,7 +190,11 @@ class RAGService:
             "6. No emojis. Use clear, professional formatting.\n"
             "7. You may use the conversation history to resolve references "
             "(e.g. 'that section', 'the second point'), but facts must still come "
-            "only from the sources.\n\n"
+            "only from the sources.\n"
+            "8. Punctuation style: write like a careful human editor. NEVER use em dashes, "
+            "en dashes, or ellipsis characters in your output. Use commas, semicolons, "
+            "colons, and periods instead. Hyphens are allowed only inside compound words "
+            '(e.g. "re-ingestion", "key-value").\n\n'
             f"=== RETRIEVED SOURCES ===\n{context_str}\n"
         )
         logger.info("Grounded prompt constructed with %d context sources.", len(chunks))

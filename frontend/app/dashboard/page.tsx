@@ -11,6 +11,28 @@ import AddSourceModal from "@/app/components/sources/AddSourceModal";
 import DeepResearchDrawer from "@/app/components/research/DeepResearchDrawer";
 import { citationLabel } from "@/lib/sources";
 import "@/app/components/research/deep-research.css";
+import ResearchCanvas from "@/app/dashboard/ResearchCanvas";
+import { OnboardingTour } from "@/app/dashboard/OnboardingTour";
+
+function extractYoutubeTimestamp(content: string): string {
+  if (!content) return "";
+  const match = content.match(/##\s*\[(\d+:\d+(?::\d+)?)\]/);
+  if (match) return match[1];
+  const fallback = content.match(/\[(\d+:\d+(?::\d+)?)\]/);
+  return fallback ? fallback[1] : "";
+}
+
+function parseTimeToSeconds(timeStr: string): number {
+  if (!timeStr) return 0;
+  const parts = timeStr.split(":").map(Number);
+  if (parts.length === 3) {
+    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  }
+  if (parts.length === 2) {
+    return parts[0] * 60 + parts[1];
+  }
+  return parts[0] || 0;
+}
 
 interface Workspace {
   id: string;
@@ -89,7 +111,7 @@ export default function Dashboard() {
   const [studioOutputs, setStudioOutputs] = useState<StudioOutput[]>([]);
   const [studioTypes, setStudioTypes] = useState<{id: string; label: string}[]>([]);
   const [openOutput, setOpenOutput] = useState<StudioOutput | null>(null);
-  const [activeTab, setActiveTab] = useState<"chat" | "studio">("chat");
+  const [activeTab, setActiveTab] = useState<"canvas" | "chat" | "studio">("canvas");
 
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -591,7 +613,7 @@ export default function Dashboard() {
     setChatInput("");
     setChatLoading(true);
     setStreamingText("");
-    // Reset ref-based accumulators – avoids stale closure captures of state
+    // Reset ref-based accumulators  -  avoids stale closure captures of state
     streamingAccumRef.current = "";
     citationsMapRef.current = {};
     
@@ -652,7 +674,7 @@ export default function Dashboard() {
         }
       }
 
-      // Use ref values to avoid stale closure – always correct final text
+      // Use ref values to avoid stale closure  -  always correct final text
       const finalContent = streamingAccumRef.current;
       const finalCitations = citationsMapRef.current;
 
@@ -698,13 +720,22 @@ export default function Dashboard() {
           citationsMap[tag] || 
           null;
         
+        const isYoutube = sourceDetails?.file_type === "youtube" || (sourceDetails?.filename && sourceDetails.filename.endsWith(" (YouTube)"));
+        let chipText = match[1];
+        if (isYoutube && sourceDetails) {
+          const ts = extractYoutubeTimestamp(sourceDetails.content || sourceDetails.text || "");
+          if (ts) {
+            chipText = `@ ${ts}`;
+          }
+        }
+
         return (
           <button
             key={idx}
             onClick={() => sourceDetails && setSelectedCitation(sourceDetails)}
             className="inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-950/40 text-orange-400 border border-orange-500/30 hover:bg-orange-500/20 transition-all duration-200 cursor-pointer ml-1 select-none"
           >
-            {match[1]}
+            {chipText}
           </button>
         );
       }
@@ -842,6 +873,16 @@ export default function Dashboard() {
           {/* Chat / Studio Tab Toggle */}
           <div className="flex bg-zinc-900 p-0.5 rounded-lg border border-zinc-800">
             <button
+              onClick={() => setActiveTab("canvas")}
+              className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                activeTab === "canvas"
+                  ? "bg-zinc-800 text-white shadow-sm"
+                  : "text-zinc-400 hover:text-zinc-200"
+              }`}
+            >
+              Research Canvas
+            </button>
+            <button
               onClick={() => setActiveTab("chat")}
               className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
                 activeTab === "chat"
@@ -871,7 +912,25 @@ export default function Dashboard() {
         )}
 
         {/* Tab Content Rendering */}
-        {activeTab === "studio" ? (
+        {activeTab === "canvas" ? (
+          <div className="flex-grow relative overflow-hidden bg-zinc-950">
+            {selectedWorkspace && (
+              <ResearchCanvas
+                workspaceId={selectedWorkspace.id}
+                documents={sources.map(s => ({
+                  id: s.id,
+                  filename: s.filename,
+                  file_type: s.file_type,
+                  status: s.status,
+                  created_at: s.created_at
+                }))}
+                studioOutputs={studioOutputs}
+                onAddSourceClick={() => setShowAddSource(true)}
+                onAskClick={() => setActiveTab("chat")}
+              />
+            )}
+          </div>
+        ) : activeTab === "studio" ? (
           <div className="flex-grow overflow-y-auto p-6 flex flex-col gap-6">
             {openOutput ? (
               /* Reader View */
@@ -1076,7 +1135,8 @@ export default function Dashboard() {
       </section>
 
       {/* COLUMN 3: RIGHT PANEL (Sources Explorer & Citation drawer) */}
-      <aside className="w-80 bg-zinc-950 border-l border-zinc-900/60 flex flex-col p-4 gap-6 flex-shrink-0">
+      {activeTab !== "canvas" && (
+        <aside className="w-80 bg-zinc-950 border-l border-zinc-900/60 flex flex-col p-4 gap-6 flex-shrink-0">
         
         {/* Source ingestion area */}
         <div className="flex flex-col gap-3">
@@ -1217,20 +1277,52 @@ export default function Dashboard() {
                   Close
                 </button>
               </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-[11px] text-white font-semibold truncate">{selectedCitation.filename}</span>
-                <span className="text-[9px] text-zinc-550">
-                  {citationLabel({
-                    page: selectedCitation.page_number,
-                    sheet: selectedCitation.sheet,
-                    timestamp: selectedCitation.timestamp,
-                    origin: selectedCitation.origin,
-                    source_label: selectedCitation.source_label,
-                    external_url: selectedCitation.external_url,
-                    venue: selectedCitation.venue,
-                  })}
-                </span>
-              </div>
+              {(() => {
+                const isYoutube = selectedCitation.file_type === "youtube" || (selectedCitation.filename && selectedCitation.filename.endsWith(" (YouTube)"));
+                let displayName = selectedCitation.filename;
+                let watchUrl = "";
+                let ts = "";
+                if (isYoutube) {
+                  const cleanName = displayName.replace(/\s*\(YouTube\)$/i, "");
+                  ts = extractYoutubeTimestamp(selectedCitation.content || selectedCitation.text || "");
+                  displayName = ts ? `${cleanName} @ ${ts}` : cleanName;
+                  if (selectedCitation.source_url) {
+                    const seconds = parseTimeToSeconds(ts);
+                    watchUrl = `${selectedCitation.source_url}&t=${seconds}s`;
+                  }
+                }
+                return (
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[11px] text-white font-semibold truncate">{displayName}</span>
+                    <span className="text-[9px] text-zinc-550">
+                      {isYoutube ? (
+                        watchUrl && ts ? (
+                          <a
+                            href={watchUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[9px] font-bold text-orange-500 hover:text-orange-400 hover:underline"
+                          >
+                            Watch at {ts} &rarr;
+                          </a>
+                        ) : (
+                          "YouTube"
+                        )
+                      ) : (
+                        citationLabel({
+                          page: selectedCitation.page_number,
+                          sheet: selectedCitation.sheet,
+                          timestamp: selectedCitation.timestamp,
+                          origin: selectedCitation.origin,
+                          source_label: selectedCitation.source_label,
+                          external_url: selectedCitation.external_url,
+                          venue: selectedCitation.venue,
+                        })
+                      )}
+                    </span>
+                  </div>
+                );
+              })()}
               <p className="text-[10px] text-zinc-300 leading-relaxed bg-zinc-950/80 border border-zinc-900 rounded p-2.5 max-h-[120px] overflow-y-auto font-sans">
                 &quot;{selectedCitation.content}&quot;
               </p>
@@ -1238,6 +1330,7 @@ export default function Dashboard() {
           )}
         </AnimatePresence>
       </aside>
+      )}
 
       {selectedWorkspace && (
         <StudioPanel
@@ -1272,6 +1365,8 @@ export default function Dashboard() {
           }}
         />
       )}
+
+      <OnboardingTour />
 
     </div>
   );

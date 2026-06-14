@@ -1,5 +1,5 @@
 """
-AtlasLM source parsers — DOCX and CSV support (Patch 002).
+AtlasLM source parsers  -  DOCX and CSV support (Patch 002).
 
 Each parser returns the same shape the pipeline already consumes:
     List[{"page_number": int, "content": str}]

@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AtlasLM — Premium AI Knowledge Workspace",
+  title: "AtlasLM  -  Premium AI Knowledge Workspace",
   description: "A self-hosted, source-grounded research notebook for privacy, model freedom, and secure AI workspaces.",
 };
 

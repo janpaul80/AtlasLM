@@ -2,6 +2,7 @@ import fitz  # PyMuPDF
 import uuid
 import logging
 import asyncio
+import re
 from typing import List, Dict, Any, Optional
 
 from sqlalchemy.orm import Session
@@ -110,15 +111,18 @@ class DocumentPipeline:
 
                 chunk_text = text[pos:end_pos].strip()
                 if chunk_text:
-                    chunks.append(
-                        {
-                            "content": chunk_text,
-                            "page_number": page_num,
-                            "chunk_index": chunk_idx,
-                            "char_start": pos,
-                            "char_end": end_pos,
-                        }
-                    )
+                    chunk_item = {
+                        "content": chunk_text,
+                        "page_number": page_num,
+                        "chunk_index": chunk_idx,
+                        "char_start": pos,
+                        "char_end": end_pos,
+                    }
+                    if "timestamp" in page_data:
+                        chunk_item["timestamp"] = page_data["timestamp"]
+                    if "sheet" in page_data:
+                        chunk_item["sheet"] = page_data["sheet"]
+                    chunks.append(chunk_item)
                     chunk_idx += 1
 
                 pos = max(end_pos - chunk_overlap, pos + 1)
@@ -196,6 +200,36 @@ class DocumentPipeline:
         elif ft == "url":
             html = file_bytes.decode("utf-8", errors="ignore")
             return extract_text_from_html(html, source_url or filename)
+        elif ft == "youtube":
+            text = file_bytes.decode("utf-8", errors="replace")
+            sections = []
+            pattern = r'^##\s+\[(\d{1,2}:\d{2}(?::\d{2})?)\]'
+            matches = list(re.finditer(pattern, text, re.MULTILINE))
+            
+            if not matches:
+                return [{"page_number": 1, "content": text, "timestamp": 0.0}]
+                
+            for i, match in enumerate(matches):
+                ts_str = match.group(1)
+                
+                parts = list(map(int, ts_str.split(":")))
+                if len(parts) == 2:
+                    seconds = float(parts[0] * 60 + parts[1])
+                elif len(parts) == 3:
+                    seconds = float(parts[0] * 3600 + parts[1] * 60 + parts[2])
+                else:
+                    seconds = 0.0
+                
+                start_idx = match.start()
+                end_idx = matches[i+1].start() if i + 1 < len(matches) else len(text)
+                section_content = text[start_idx:end_idx].strip()
+                
+                sections.append({
+                    "page_number": i + 1,
+                    "content": section_content,
+                    "timestamp": seconds
+                })
+            return sections
         else:
             return self.extract_text_from_txt_or_md(file_bytes, filename)
 
@@ -260,6 +294,8 @@ class DocumentPipeline:
                     chunk_index=chunk_info["chunk_index"],
                     char_start=chunk_info["char_start"],
                     char_end=chunk_info["char_end"],
+                    timestamp=chunk_info.get("timestamp"),
+                    sheet=chunk_info.get("sheet"),
                 )
             )
         # NOTE: commit is done by the caller (worker) together with status='ready'
@@ -341,6 +377,8 @@ class DocumentPipeline:
                         chunk_index=chunk_info["chunk_index"],
                         char_start=chunk_info["char_start"],
                         char_end=chunk_info["char_end"],
+                        timestamp=chunk_info.get("timestamp"),
+                        sheet=chunk_info.get("sheet"),
                     )
                 )
 

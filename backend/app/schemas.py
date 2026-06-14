@@ -110,3 +110,35 @@ class StudioOutputOut(BaseModel):
     class Config:
         from_attributes = True
 
+
+class GraphEdgeCreate(BaseModel):
+    from_document_id: UUID
+    to_document_id: UUID
+
+
+class GraphEdgeOut(BaseModel):
+    id: UUID
+    workspace_id: UUID
+    from_document_id: UUID
+    to_document_id: UUID
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class NodePositionUpdate(BaseModel):
+    document_id: UUID
+    x_pos: float
+    y_pos: float
+
+
+class OnboardingFlagsOut(BaseModel):
+    tour_completed: bool
+    marketing_opt_in: bool
+
+
+class OnboardingFlagsUpdate(BaseModel):
+    tour_completed: Optional[bool] = None
+    marketing_opt_in: Optional[bool] = None
+

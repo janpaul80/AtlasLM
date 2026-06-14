@@ -8,11 +8,16 @@ import re
 
 from ..core.database import get_db
 from ..core.config import settings
-from ..models import Workspace, Document, ChatSession, ChatMessage
+from ..models import Workspace, Document, ChatSession, ChatMessage, WorkspaceGraphEdge, CanvasPosition, UserProfile
 from ..schemas import (
     WorkspaceCreate, WorkspaceOut, DocumentOut, 
     ChatSessionCreate, ChatSessionOut, ChatSessionDetailsOut,
-    ChatMessageCreate, URLIngestRequest, TextIngestRequest
+    ChatMessageCreate, URLIngestRequest, TextIngestRequest,
+    GraphEdgeCreate, GraphEdgeOut, NodePositionUpdate,
+    OnboardingFlagsOut, OnboardingFlagsUpdate
+)
+from ..services.youtube_extract import (
+    extract_youtube_transcript, YouTubeExtractError,
 )
 from ..services.pipeline import DocumentPipeline
 from ..services.rag import RAGService
@@ -754,4 +759,183 @@ def research_job_status(
             raise HTTPException(status_code=404, detail="job not found")
             
     return job
+
+
+# ── Helper for User Profiles ──────────────────────────────────────────────────
+def _get_or_create_profile(db: Session, user_id: str) -> UserProfile:
+    profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+    if not profile:
+        profile = UserProfile(user_id=user_id, tour_completed=False, marketing_opt_in=False)
+        db.add(profile)
+        db.commit()
+        db.refresh(profile)
+    return profile
+
+
+# ── YouTube Ingestion Endpoint ────────────────────────────────────────────────
+@router.post(
+    "/workspaces/{workspace_id}/documents/youtube",
+    response_model=DocumentOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def ingest_youtube(
+    request: Request,
+    workspace_id: uuid.UUID,
+    body: URLIngestRequest,
+    db: Session = Depends(get_db),
+):
+    uid = current_user_id(request)
+    _get_owned_workspace(workspace_id, uid, db)
+
+    url = str(body.url).strip()
+
+    try:
+        result = await extract_youtube_transcript(url)
+    except YouTubeExtractError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    transcript_text = result["text"]
+    filename = f"{result['title'][:200]} (YouTube)"
+    file_bytes = transcript_text.encode("utf-8")
+    canonical_url = f"https://www.youtube.com/watch?v={result['video_id']}"
+
+    pipeline = DocumentPipeline(db)
+
+    # Async path via Redis queue
+    if redis_healthy():
+        doc = pipeline.create_pending_document(
+            workspace_id=workspace_id,
+            filename=filename,
+            file_type="youtube",
+            source_url=canonical_url,
+        )
+        try:
+            enqueue_ingestion_job(
+                document_id=doc.id,
+                workspace_id=workspace_id,
+                filename=filename,
+                file_type="youtube",
+                file_bytes=file_bytes,
+                source_url=canonical_url,
+            )
+        except Exception:
+            db.delete(doc)
+            db.commit()
+        else:
+            return JSONResponse(
+                status_code=status.HTTP_202_ACCEPTED,
+                content=jsonable_encoder(DocumentOut.model_validate(doc)),
+            )
+
+    # Sync fallback
+    try:
+        doc = await pipeline.ingest_document(
+            workspace_id=workspace_id,
+            filename=filename,
+            file_bytes=file_bytes,
+            file_type="youtube",
+            source_url=canonical_url,
+        )
+        return doc
+    except ProviderError as e:
+        raise HTTPException(status_code=503, detail=e.public_message)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# ── Workspace Graph (Canvas Connections) Endpoints ────────────────────────────
+@router.get("/workspaces/{workspace_id}/graph", response_model=list[GraphEdgeOut])
+def list_graph_edges(workspace_id: uuid.UUID, request: Request, db: Session = Depends(get_db)):
+    uid = current_user_id(request)
+    ws = _get_owned_workspace(workspace_id, uid, db)
+    return db.query(WorkspaceGraphEdge).filter(WorkspaceGraphEdge.workspace_id == ws.id).all()
+
+
+@router.post("/workspaces/{workspace_id}/graph", response_model=GraphEdgeOut, status_code=201)
+def create_graph_edge(workspace_id: uuid.UUID, payload: GraphEdgeCreate,
+                      request: Request, db: Session = Depends(get_db)):
+    uid = current_user_id(request)
+    ws = _get_owned_workspace(workspace_id, uid, db)
+    if payload.from_document_id == payload.to_document_id:
+        raise HTTPException(status_code=400, detail="A source cannot connect to itself.")
+    docs = db.query(Document).filter(
+        Document.workspace_id == ws.id,
+        Document.id.in_([payload.from_document_id, payload.to_document_id]),
+    ).count()
+    if docs != 2:
+        raise HTTPException(status_code=404, detail="Source not found in this notebook.")
+    existing = db.query(WorkspaceGraphEdge).filter_by(
+        workspace_id=ws.id,
+        from_document_id=payload.from_document_id,
+        to_document_id=payload.to_document_id,
+    ).first()
+    if existing:
+        return existing  # idempotent
+    edge = WorkspaceGraphEdge(workspace_id=ws.id,
+                              from_document_id=payload.from_document_id,
+                              to_document_id=payload.to_document_id)
+    db.add(edge); db.commit(); db.refresh(edge)
+    return edge
+
+
+@router.delete("/workspaces/{workspace_id}/graph/{edge_id}", status_code=204)
+def delete_graph_edge(workspace_id: uuid.UUID, edge_id: uuid.UUID,
+                      request: Request, db: Session = Depends(get_db)):
+    uid = current_user_id(request)
+    ws = _get_owned_workspace(workspace_id, uid, db)
+    edge = db.query(WorkspaceGraphEdge).filter_by(id=edge_id, workspace_id=ws.id).first()
+    if not edge:
+        raise HTTPException(status_code=404, detail="Connection not found.")
+    db.delete(edge); db.commit()
+
+
+# ── Canvas Node Positions Endpoints ───────────────────────────────────────────
+@router.put("/workspaces/{workspace_id}/graph/positions", status_code=204)
+def save_node_positions(workspace_id: uuid.UUID, payload: list[NodePositionUpdate],
+                        request: Request, db: Session = Depends(get_db)):
+    uid = current_user_id(request)
+    ws = _get_owned_workspace(workspace_id, uid, db)
+    doc_ids = {d.id for d in db.query(Document.id).filter(Document.workspace_id == ws.id).all()}
+    for item in payload:
+        if item.document_id not in doc_ids:
+            continue
+        pos = db.query(CanvasPosition).filter_by(document_id=item.document_id).first()
+        if pos is None:
+            pos = CanvasPosition(document_id=item.document_id, workspace_id=ws.id)
+            db.add(pos)
+        pos.x_pos, pos.y_pos = item.x_pos, item.y_pos
+    db.commit()
+
+
+@router.get("/workspaces/{workspace_id}/graph/positions")
+def get_node_positions(workspace_id: uuid.UUID, request: Request, db: Session = Depends(get_db)):
+    uid = current_user_id(request)
+    ws = _get_owned_workspace(workspace_id, uid, db)
+    rows = db.query(CanvasPosition).filter(CanvasPosition.workspace_id == ws.id).all()
+    return [{"document_id": str(r.document_id), "x_pos": r.x_pos, "y_pos": r.y_pos} for r in rows]
+
+
+# ── Onboarding Flags Endpoints ────────────────────────────────────────────────
+@router.get("/me/onboarding", response_model=OnboardingFlagsOut)
+def get_onboarding_flags(request: Request, db: Session = Depends(get_db)):
+    uid = current_user_id(request)
+    profile = _get_or_create_profile(db, uid)
+    return OnboardingFlagsOut(tour_completed=profile.tour_completed,
+                              marketing_opt_in=profile.marketing_opt_in)
+
+
+@router.patch("/me/onboarding", response_model=OnboardingFlagsOut)
+def update_onboarding_flags(payload: OnboardingFlagsUpdate,
+                            request: Request, db: Session = Depends(get_db)):
+    uid = current_user_id(request)
+    profile = _get_or_create_profile(db, uid)
+    if payload.tour_completed is not None:
+        profile.tour_completed = payload.tour_completed
+    if payload.marketing_opt_in is not None:
+        profile.marketing_opt_in = payload.marketing_opt_in
+    db.commit(); db.refresh(profile)
+    return OnboardingFlagsOut(tour_completed=profile.tour_completed,
+                              marketing_opt_in=profile.marketing_opt_in)
 

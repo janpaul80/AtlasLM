@@ -42,14 +42,14 @@ PER_DOC_CHAR_BUDGET = 24_000
 OUTPUT_TYPES: Dict[str, Dict[str, Any]] = {
     "report": {
         "label": "Report",
-        "title_template": "Report — {workspace}",
+        "title_template": "Report  -  {workspace}",
         "instructions": (
             "Write a comprehensive, well-structured research REPORT based strictly "
             "on the provided sources. Structure:\n"
             "# (a descriptive title you choose)\n"
-            "## Introduction — what the sources cover and why it matters\n"
+            "## Introduction  -  what the sources cover and why it matters\n"
             "## (3-6 thematic sections you choose based on the material)\n"
-            "## Key Findings — bulleted, each with citations\n"
+            "## Key Findings  -  bulleted, each with citations\n"
             "## Conclusion\n"
             "Use Markdown. Be thorough but never pad. Every factual claim must "
             "carry its [source_N] citation."
@@ -57,14 +57,14 @@ OUTPUT_TYPES: Dict[str, Dict[str, Any]] = {
     },
     "executive_summary": {
         "label": "Executive Summary",
-        "title_template": "Executive Summary — {workspace}",
+        "title_template": "Executive Summary  -  {workspace}",
         "instructions": (
             "Write a crisp EXECUTIVE SUMMARY of the provided sources for a "
             "time-poor decision-maker. Structure:\n"
             "# Executive Summary\n"
-            "## Overview — 2-3 sentences\n"
-            "## Key Points — 4-8 bullets, most important first, each cited\n"
-            "## Implications / Recommendations — only if the sources support them\n"
+            "## Overview  -  2-3 sentences\n"
+            "## Key Points  -  4-8 bullets, most important first, each cited\n"
+            "## Implications / Recommendations  -  only if the sources support them\n"
             "Maximum ~500 words. Use Markdown. Every factual claim must carry "
             "its [source_N] citation. Do not invent recommendations the sources "
             "do not support."
@@ -150,6 +150,7 @@ class StudioService:
             "3. Every factual claim MUST carry its source tag in brackets "
             "(e.g. [source_1]). Multiple sources: [source_1][source_3].\n"
             "3b. Recommendations and implications may ONLY restate or directly follow from explicit statements in the sources. NEVER convert observed data patterns into advice, policy, or assumptions. If the sources contain no explicit recommendations, state: 'The sources do not contain explicit recommendations.'\n"
+            "3c. Punctuation style: write like a careful human editor. NEVER use em dashes, en dashes, or ellipsis characters in your output. Use commas, semicolons, colons, and periods instead. Hyphens are allowed only inside compound words (e.g. \"re-ingestion\", \"key-value\").\n"
             "4. NEVER cite tags that are not in the provided list.\n"
             "5. Output clean Markdown. No emojis. No preamble before the title "
             "and no commentary after the document.\n\n"
