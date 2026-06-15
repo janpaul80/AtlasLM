@@ -88,6 +88,11 @@ export default function Dashboard() {
   const [streamingText, setStreamingText] = useState("");
   
   const [activeProvider, setActiveProvider] = useState("atlas-cloud");
+  const [activeScopeNode, setActiveScopeNode] = useState<{
+    id: string;
+    title: string;
+    count: number;
+  } | null>(null);
   const [availableProviders, setAvailableProviders] = useState<{ id: string, name: string, status: string }[]>([]);
   const atlasProviderLabel = availableProviders.find((p) => p.id === activeProvider)?.name || "AtlasLM Engine";
   const [citationsMap, setCitationsMap] = useState<Record<string, any>>({});
@@ -628,7 +633,10 @@ export default function Dashboard() {
     try {
       const response = await apiClient.stream(
         `/api/v1/sessions/${sessionId}/chat/stream`,
-        { content: userQuery }
+        {
+          content: userQuery,
+          synthesis_node_id: activeScopeNode?.id || null,
+        }
       );
 
       const reader = response.body?.getReader();
@@ -926,7 +934,14 @@ export default function Dashboard() {
                 }))}
                 studioOutputs={studioOutputs}
                 onAddSourceClick={() => setShowAddSource(true)}
-                onAskClick={() => setActiveTab("chat")}
+                onAskClick={(scopeNode) => {
+                  if (scopeNode) {
+                    setActiveScopeNode(scopeNode);
+                  } else {
+                    setActiveScopeNode(null);
+                  }
+                  setActiveTab("chat");
+                }}
               />
             )}
           </div>
@@ -1111,6 +1126,22 @@ export default function Dashboard() {
 
         {/* Message Input Box */}
         <div className="p-6 border-t border-zinc-900/60 flex-shrink-0 bg-zinc-950">
+          {activeScopeNode && (
+            <div className="max-w-3xl mx-auto mb-3 flex items-center gap-2">
+              <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-[10px] font-bold bg-purple-950/40 text-purple-400 border border-purple-500/30">
+                <span>Scoped to: {activeScopeNode.title} ({activeScopeNode.count} sources)</span>
+                <button
+                  type="button"
+                  onClick={() => setActiveScopeNode(null)}
+                  className="hover:text-purple-200 transition-colors cursor-pointer"
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <path d="M18 6L6 18M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          )}
           <form onSubmit={handleSendChatMessage} className="max-w-3xl mx-auto relative flex items-center">
             <input
               type="text"

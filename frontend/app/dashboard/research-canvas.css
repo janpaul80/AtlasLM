@@ -1560,3 +1560,78 @@ body.linking, body.linking * {
   position: relative;
 }
 
+
+/* ====== SYNTHESIS NODES ====== */
+.synthesis-node {
+  background: rgba(30, 20, 50, 0.45) !important;
+  border: 1px solid rgba(139, 92, 246, 0.4) !important;
+  box-shadow: 0 8px 32px 0 rgba(139, 92, 246, 0.15), inset 0 1px 1px 0 rgba(255, 255, 255, 0.05) !important;
+}
+
+.synthesis-dot {
+  background-color: #a78bfa !important;
+  box-shadow: 0 0 8px #a78bfa;
+}
+
+.synthesis-wire {
+  stroke: #8b5cf6 !important;
+  stroke-dasharray: 4 2;
+}
+
+.synthesis-wire-dot {
+  fill: #c084fc !important;
+}
+
+.nh-title-input {
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  width: 130px;
+  outline: none;
+}
+
+.nh-title-input:focus {
+  border-bottom: 1px solid #8b5cf6;
+}
+
+.node-delete-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+
+.node-delete-btn:hover {
+  color: var(--red);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.run-synthesis-btn {
+  width: 100%;
+  background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);
+  border: 1px solid rgba(139, 92, 246, 0.5);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 6px 12px;
+  margin-top: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.run-synthesis-btn:hover {
+  background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+  box-shadow: 0 0 12px rgba(124, 58, 237, 0.4);
+}
+
+

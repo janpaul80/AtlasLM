@@ -51,6 +51,7 @@ class ChatMessageBase(BaseModel):
 
 class ChatMessageCreate(BaseModel):
     content: str
+    synthesis_node_id: Optional[UUID] = None
 
 class ChatMessageOut(ChatMessageBase):
     id: UUID
@@ -141,4 +142,34 @@ class OnboardingFlagsOut(BaseModel):
 class OnboardingFlagsUpdate(BaseModel):
     tour_completed: Optional[bool] = None
     marketing_opt_in: Optional[bool] = None
+
+
+class SynthesisNodeCreate(BaseModel):
+    title: str = "Synthesis"
+    x_pos: float = 0
+    y_pos: float = 0
+
+
+class SynthesisNodeUpdate(BaseModel):
+    title: Optional[str] = None
+    x_pos: Optional[float] = None
+    y_pos: Optional[float] = None
+
+
+class SynthesisNodeOut(BaseModel):
+    id: UUID
+    workspace_id: UUID
+    title: str
+    x_pos: float
+    y_pos: float
+    created_at: datetime
+    input_document_ids: List[UUID] = []
+
+    class Config:
+        from_attributes = True
+
+
+class SynthesisInputCreate(BaseModel):
+    document_id: UUID
+
 

@@ -139,3 +139,43 @@ class UserProfile(Base):
     tour_completed = Column(Boolean, nullable=False, default=False)
     marketing_opt_in = Column(Boolean, nullable=False, default=False)
 
+
+class SynthesisNode(Base):
+    __tablename__ = "synthesis_nodes"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    title = Column(String, nullable=False, default="Synthesis")
+    x_pos = Column(Float, nullable=False, default=0)
+    y_pos = Column(Float, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class SynthesisInput(Base):
+    __tablename__ = "synthesis_inputs"
+    __table_args__ = (
+        UniqueConstraint(
+            "synthesis_node_id", "document_id", name="unique_synthesis_input"
+        ),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    synthesis_node_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("synthesis_nodes.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    document_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+

@@ -10,11 +10,11 @@ from sqlalchemy.orm import Session
 from ..models import Document, DocumentChunk
 from ..core.providers import provider_registry, ProviderError
 from .parsers import (
-    extract_text_from_docx,
-    extract_text_from_csv,
     extract_text_from_xlsx,
     extract_text_from_pptx,
 )
+from .docx_extract import extract_docx_markdown, DocxExtractError
+from .csv_extract import extract_csv_markdown, CsvExtractError
 from .web_extract import extract_text_from_html
 
 logger = logging.getLogger("atlaslm.ingestion")
@@ -190,9 +190,17 @@ class DocumentPipeline:
         if ft == "pdf":
             return self.extract_text_from_pdf(file_bytes, filename)
         elif ft == "docx":
-            return extract_text_from_docx(file_bytes, filename)
+            try:
+                text = extract_docx_markdown(file_bytes)
+            except DocxExtractError as e:
+                raise ValueError(str(e))
+            return [{"page_number": 1, "content": text}]
         elif ft == "csv":
-            return extract_text_from_csv(file_bytes, filename)
+            try:
+                text = extract_csv_markdown(file_bytes)
+            except CsvExtractError as e:
+                raise ValueError(str(e))
+            return [{"page_number": 1, "content": text}]
         elif ft == "xlsx":
             return extract_text_from_xlsx(file_bytes, filename)
         elif ft == "pptx":

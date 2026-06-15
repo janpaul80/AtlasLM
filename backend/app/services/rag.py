@@ -61,6 +61,7 @@ class RAGService:
         query: str,
         provider_name: Optional[str] = None,
         top_k: int = 8,
+        scope_doc_ids: Optional[List[uuid.UUID]] = None,
     ) -> List[Dict[str, Any]]:
         """
         Embeds the query and runs a pgvector cosine search, restricted to
@@ -84,9 +85,20 @@ class RAGService:
 
         vector_str = "[" + ",".join(map(str, query_vector)) + "]"
 
+        scope_filter = ""
+        params = {
+            "query_vector": vector_str,
+            "workspace_id": workspace_id,
+            "model_id": embedding_provider.model_id,
+            "top_k": top_k,
+        }
+        if scope_doc_ids is not None:
+            scope_filter = "AND d.id IN :scope_doc_ids"
+            params["scope_doc_ids"] = tuple(scope_doc_ids)
+
         db_start = time.time()
         sql_query = text(
-            """
+            f"""
             SELECT dc.id, dc.content, dc.page_number, dc.chunk_index,
                    d.id AS document_id, d.filename,
                    (dc.embedding <=> :query_vector) AS distance,
@@ -94,20 +106,13 @@ class RAGService:
             FROM document_chunks dc
             JOIN documents d ON dc.document_id = d.id
             WHERE d.workspace_id = :workspace_id
+              {scope_filter}
               AND (d.embedding_model IS NULL OR d.embedding_model = :model_id)
             ORDER BY distance ASC
             LIMIT :top_k
             """
         )
-        results = self.db.execute(
-            sql_query,
-            {
-                "query_vector": vector_str,
-                "workspace_id": workspace_id,
-                "model_id": embedding_provider.model_id,
-                "top_k": top_k,
-            },
-        ).fetchall()
+        results = self.db.execute(sql_query, params).fetchall()
         logger.info(
             "pgvector returned %d matches in %.3fs",
             len(results),
@@ -228,6 +233,7 @@ class RAGService:
         session_id: uuid.UUID,
         user_message: str,
         provider_name: Optional[str] = None,
+        scope_doc_ids: Optional[List[uuid.UUID]] = None,
     ) -> AsyncGenerator[str, None]:
         logger.info(
             "Starting RAG chat stream for session %s in workspace %s",
@@ -256,6 +262,17 @@ class RAGService:
             yield "event: end\ndata: [DONE]\n\n"
             return
 
+        # 2b. Empty-scope guard (when scope is present but empty)
+        if scope_doc_ids is not None and len(scope_doc_ids) == 0:
+            msg = (
+                "No sources are wired into this synthesis node yet. "
+                "Connect one or more sources to it, then ask again."
+            )
+            yield self._sse("data", {"type": "chunk", "content": msg})
+            self._save_assistant(session_id, msg, [])
+            yield "event: end\ndata: [DONE]\n\n"
+            return
+
         # 3. Empty-workspace guard (proper UX instead of grounding failure text)
         doc_count = (
             self.db.query(Document)
@@ -276,7 +293,7 @@ class RAGService:
         # 4. Retrieval
         try:
             chunks = await self.retrieve_relevant_chunks(
-                workspace_id, user_message, provider_name
+                workspace_id, user_message, provider_name, scope_doc_ids=scope_doc_ids
             )
         except ProviderError as e:
             yield self._sse("error", {"error": e.public_message})

@@ -27,12 +27,22 @@ type Pos = {
   y_pos: number;
 };
 
+type SynthesisNode = {
+  id: string;
+  workspace_id: string;
+  title: string;
+  x_pos: number;
+  y_pos: number;
+  input_document_ids: string[];
+  created_at: string;
+};
+
 interface ResearchCanvasProps {
   workspaceId: string;
   documents: Doc[];
   studioOutputs: any[];
   onAddSourceClick: () => void;
-  onAskClick: () => void;
+  onAskClick: (scopeNode?: { id: string; title: string; count: number }) => void;
 }
 
 export default function ResearchCanvas({
@@ -43,6 +53,7 @@ export default function ResearchCanvas({
   onAskClick,
 }: ResearchCanvasProps) {
   const [edges, setEdges] = useState<Edge[]>([]);
+  const [synthesisNodes, setSynthesisNodes] = useState<SynthesisNode[]>([]);
   const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({});
   
   // Drag-to-connect state
@@ -83,14 +94,21 @@ export default function ResearchCanvas({
     Promise.all([
       apiClient.get<Edge[]>(`/api/v1/workspaces/${workspaceId}/graph`),
       apiClient.get<Pos[]>(`/api/v1/workspaces/${workspaceId}/graph/positions`),
+      apiClient.get<SynthesisNode[]>(`/api/v1/workspaces/${workspaceId}/synthesis`),
     ])
-      .then(([edgeRows, posRows]) => {
+      .then(([edgeRows, posRows, synthesisRows]) => {
         setEdges(edgeRows ?? []);
+        setSynthesisNodes(synthesisRows ?? []);
         const map: Record<string, { x: number; y: number }> = {};
         
         // Match positions
         (posRows ?? []).forEach((p) => {
           map[p.document_id] = { x: p.x_pos, y: p.y_pos };
+        });
+
+        // Set positions for synthesis nodes directly from their x_pos, y_pos
+        (synthesisRows ?? []).forEach((n) => {
+          map[n.id] = { x: n.x_pos, y: n.y_pos };
         });
 
         // Fallback layout for documents without positions
@@ -121,6 +139,29 @@ export default function ResearchCanvas({
   // Add edge API call
   const addEdge = useCallback(async (fromId: string, toId: string) => {
     if (fromId === toId) return; // self-edge guard
+
+    const isToSynthesis = synthesisNodes.some((sn) => sn.id === toId);
+    if (isToSynthesis) {
+      const node = synthesisNodes.find((sn) => sn.id === toId);
+      if (!node) return;
+      if (node.input_document_ids.includes(fromId)) return; // duplicate guard
+      try {
+        await apiClient.post(`/api/v1/workspaces/${workspaceId}/synthesis/${toId}/inputs`, {
+          document_id: fromId,
+        });
+        setSynthesisNodes((prev) =>
+          prev.map((sn) =>
+            sn.id === toId
+              ? { ...sn, input_document_ids: [...sn.input_document_ids, fromId] }
+              : sn
+          )
+        );
+      } catch (err) {
+        console.error("Failed to add synthesis input:", err);
+      }
+      return;
+    }
+
     // Check duplicates
     if (edges.some((e) => e.from_document_id === fromId && e.to_document_id === toId)) return;
     
@@ -133,7 +174,7 @@ export default function ResearchCanvas({
     } catch (err) {
       console.error("Failed to create connection:", err);
     }
-  }, [edges, workspaceId]);
+  }, [edges, workspaceId, synthesisNodes]);
 
   // Remove edge API call
   const removeEdge = useCallback(async (edgeId: string) => {
@@ -146,13 +187,25 @@ export default function ResearchCanvas({
   }, [workspaceId]);
 
   // Save node position API call (debounced)
-  const saveNodePosition = useCallback((docId: string, x: number, y: number) => {
+  const saveNodePosition = useCallback((nodeId: string, x: number, y: number) => {
+    const isSynthesis = synthesisNodes.some((sn) => sn.id === nodeId);
+    if (isSynthesis) {
+      apiClient.patch(`/api/v1/workspaces/${workspaceId}/synthesis/${nodeId}`, {
+        x_pos: x,
+        y_pos: y,
+      }).catch((err) => console.error("Failed to save synthesis node position:", err));
+      return;
+    }
+
     setPositions((prev) => {
-      const nextPositions = { ...prev, [docId]: { x, y } };
+      const nextPositions = { ...prev, [nodeId]: { x, y } };
       
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => {
-        const payload = Object.entries(nextPositions).map(([document_id, p]) => ({
+        const docPositions = Object.entries(nextPositions).filter(([id]) => {
+          return !synthesisNodes.some((sn) => sn.id === id);
+        });
+        const payload = docPositions.map(([document_id, p]) => ({
           document_id,
           x_pos: p.x,
           y_pos: p.y,
@@ -163,7 +216,7 @@ export default function ResearchCanvas({
 
       return nextPositions;
     });
-  }, [workspaceId]);
+  }, [workspaceId, synthesisNodes]);
 
   // Port coordinates helper relative to the canvas wrap container
   const getPortPos = useCallback((nodeId: string, side: "left" | "right") => {
@@ -194,8 +247,9 @@ export default function ResearchCanvas({
       } else {
         return e.to_document_id === nodeId;
       }
-    });
-  }, [edges]);
+    }) || (side === "left" && synthesisNodes.some((sn) => sn.id === nodeId && sn.input_document_ids.length > 0)) ||
+      (side === "right" && synthesisNodes.some((sn) => sn.input_document_ids.includes(nodeId)));
+  }, [edges, synthesisNodes]);
 
   // Node Drag handlers
   const handleNodePointerDown = (docId: string, e: React.PointerEvent) => {
@@ -438,6 +492,89 @@ export default function ResearchCanvas({
     );
   };
 
+  // Synthesis node rendering helper
+  const renderSynthesisNode = (node: SynthesisNode) => {
+    const pos = positions[node.id] || { x: 50, y: 50 };
+    const isLeftHoverTarget = hoveredPort?.nodeId === node.id && hoveredPort?.side === "left";
+    const isLeftLit = node.input_document_ids.length > 0;
+
+    return (
+      <div
+        key={node.id}
+        id={`node-${node.id}`}
+        className="node synthesis-node"
+        style={{ left: pos.x, top: pos.y }}
+        onPointerDown={(e) => handleNodePointerDown(node.id, e)}
+        onPointerMove={handleNodePointerMove}
+        onPointerUp={handleNodePointerUp}
+        data-node
+      >
+        {/* Left Input Port */}
+        <span
+          className={`port left ${isLeftLit ? "lit" : ""} ${isLeftHoverTarget ? "drag-target" : ""}`}
+          data-node-id={node.id}
+          onPointerDown={(e) => handlePortPointerDown(node.id, "left", e)}
+          onPointerMove={handlePortPointerMove}
+          onPointerUp={handlePortPointerUp}
+        />
+
+        <div className="node-head">
+          <span className="nh-dot synthesis-dot" />
+          <input
+            type="text"
+            className="nh-title-input"
+            value={node.title}
+            onChange={(e) => {
+              const newTitle = e.target.value;
+              setSynthesisNodes((prev) =>
+                prev.map((sn) => (sn.id === node.id ? { ...sn, title: newTitle } : sn))
+              );
+              if (saveTimer.current) clearTimeout(saveTimer.current);
+              saveTimer.current = setTimeout(() => {
+                apiClient.patch(`/api/v1/workspaces/${workspaceId}/synthesis/${node.id}`, {
+                  title: newTitle,
+                }).catch((err) => console.error("Failed to update synthesis title:", err));
+              }, 600);
+            }}
+          />
+          <button
+            className="node-delete-btn"
+            onClick={async () => {
+              try {
+                await apiClient.del(`/api/v1/workspaces/${workspaceId}/synthesis/${node.id}`);
+                setSynthesisNodes((prev) => prev.filter((sn) => sn.id !== node.id));
+              } catch (err) {
+                console.error("Failed to delete synthesis node:", err);
+              }
+            }}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="node-body">
+          <div className="node-rows">
+            <div className="node-row">
+              <span className="k">Inputs</span>
+              <span className="v font-bold">{node.input_document_ids.length} sources</span>
+            </div>
+          </div>
+          
+          <button
+            className="run-synthesis-btn"
+            onClick={() => {
+              onAskClick({ id: node.id, title: node.title, count: node.input_document_ids.length });
+            }}
+          >
+            Run synthesis
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   // Generate standard bars layout for Weekly Activity
   const barHeights = [28, 34, 30, 38, 32, 40, 36, 44, 40, 48, 42, 52, 46, 56, 50, 60, 54, 64, 58, 70, 62, 74, 66, 80, 72, 86, 78, 92, 84, 96];
 
@@ -476,6 +613,48 @@ export default function ResearchCanvas({
             </g>
           );
         })}
+
+        {/* Render synthesis input wires */}
+        {synthesisNodes.flatMap((node) =>
+          node.input_document_ids.map((docId) => {
+            const p1 = getPortPos(docId, "right");
+            const p2 = getPortPos(node.id, "left");
+            
+            if (p1.x === 0 || p2.x === 0) return null;
+
+            const d = getCurvePath(p1, p2);
+
+            return (
+              <g key={`${node.id}-${docId}`} className="edge" style={{ pointerEvents: "auto" }}>
+                <path d={d} className="wire active synthesis-wire" />
+                <path
+                  d={d}
+                  className="wire-hit"
+                  onClick={async () => {
+                    try {
+                      await apiClient.del(`/api/v1/workspaces/${workspaceId}/synthesis/${node.id}/inputs/${docId}`);
+                      setSynthesisNodes((prev) =>
+                        prev.map((sn) =>
+                          sn.id === node.id
+                            ? {
+                                ...sn,
+                                input_document_ids: sn.input_document_ids.filter((id) => id !== docId),
+                              }
+                            : sn
+                        )
+                      );
+                    } catch (err) {
+                      console.error("Failed to remove synthesis input:", err);
+                    }
+                  }}
+                />
+                <circle r="3.2" className="wire-dot synthesis-wire-dot">
+                  <animateMotion dur="3s" repeatCount="indefinite" path={d} />
+                </circle>
+              </g>
+            );
+          })
+        )}
 
         {/* Render active dragging wire */}
         {activeLink && (() => {
@@ -543,6 +722,7 @@ export default function ResearchCanvas({
 
       {/* Center Draggable Nodes */}
       {(documents || []).map((doc) => renderNode(doc))}
+      {synthesisNodes.map((node) => renderSynthesisNode(node))}
 
       {/* Right Rail Details */}
       <div className="right-panel">
@@ -553,7 +733,7 @@ export default function ResearchCanvas({
           </div>
           <div className="activity-inner">
             <h3>Intel Operations</h3>
-            <span className="link" onClick={onAskClick}>Open Grounded Chat</span>
+            <span className="link" onClick={() => onAskClick()}>Open Grounded Chat</span>
             
             <div className="chart-zone">
               <div className="callout-dot" />
@@ -654,12 +834,37 @@ export default function ResearchCanvas({
             <path d="M2 14l10 6 10-6" />
           </svg>
         </button>
+        <button
+          className="tb-btn"
+          title="Add Synthesis Node"
+          onClick={async () => {
+            try {
+              const node = await apiClient.post<SynthesisNode>(`/api/v1/workspaces/${workspaceId}/synthesis`, {
+                title: "Synthesis",
+                x_pos: 150 + Math.random() * 150,
+                y_pos: 150 + Math.random() * 150,
+              });
+              setSynthesisNodes((prev) => [...prev, node]);
+              setPositions((prev) => ({
+                ...prev,
+                [node.id]: { x: node.x_pos, y: node.y_pos },
+              }));
+            } catch (err) {
+              console.error("Failed to create synthesis node:", err);
+            }
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <path d="M12 8v8M8 12h8" />
+          </svg>
+        </button>
         <div className="tb-sep" />
-        <div className="tb-status" onClick={onAskClick}>
+        <div className="tb-status" onClick={() => onAskClick()}>
           <span className="pulse" />
           Engine Ready
         </div>
-        <button className="tb-send" title="Ask AtlasLM Chat" onClick={onAskClick}>
+        <button className="tb-send" title="Ask AtlasLM Chat" onClick={() => onAskClick()}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M22 2L11 13M22 2l-7 20-4-9-9-4z" />
           </svg>

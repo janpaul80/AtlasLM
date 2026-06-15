@@ -8,13 +8,14 @@ import re
 
 from ..core.database import get_db
 from ..core.config import settings
-from ..models import Workspace, Document, ChatSession, ChatMessage, WorkspaceGraphEdge, CanvasPosition, UserProfile
+from ..models import Workspace, Document, ChatSession, ChatMessage, WorkspaceGraphEdge, CanvasPosition, UserProfile, SynthesisNode, SynthesisInput
 from ..schemas import (
     WorkspaceCreate, WorkspaceOut, DocumentOut, 
     ChatSessionCreate, ChatSessionOut, ChatSessionDetailsOut,
     ChatMessageCreate, URLIngestRequest, TextIngestRequest,
     GraphEdgeCreate, GraphEdgeOut, NodePositionUpdate,
-    OnboardingFlagsOut, OnboardingFlagsUpdate
+    OnboardingFlagsOut, OnboardingFlagsUpdate,
+    SynthesisNodeCreate, SynthesisNodeUpdate, SynthesisNodeOut, SynthesisInputCreate
 )
 from ..services.youtube_extract import (
     extract_youtube_transcript, YouTubeExtractError,
@@ -479,11 +480,13 @@ async def chat_stream(
         raise HTTPException(status_code=404, detail="Chat session not found")
     # Verify ownership via the owning workspace but do not leak workspace existence.
     try:
-        _get_owned_workspace(session.workspace_id, uid, db)
+        ws = _get_owned_workspace(session.workspace_id, uid, db)
     except HTTPException as exc:
         if exc.status_code == 404:
             raise HTTPException(status_code=404, detail="Chat session not found")
         raise
+
+    scope = scoped_document_ids(db, ws, message.synthesis_node_id)
 
     rag = RAGService(db)
     return StreamingResponse(
@@ -491,6 +494,7 @@ async def chat_stream(
             workspace_id=session.workspace_id,
             session_id=session_id,
             user_message=message.content,
+            scope_doc_ids=scope,
         ),
         media_type="text/event-stream",
     )
@@ -938,4 +942,105 @@ def update_onboarding_flags(payload: OnboardingFlagsUpdate,
     db.commit(); db.refresh(profile)
     return OnboardingFlagsOut(tour_completed=profile.tour_completed,
                               marketing_opt_in=profile.marketing_opt_in)
+
+
+# ── Synthesis Endpoints ───────────────────────────────────────────────────────
+
+@router.get("/workspaces/{workspace_id}/synthesis", response_model=list[SynthesisNodeOut])
+def list_synthesis_nodes(workspace_id: uuid.UUID, request: Request, db: Session = Depends(get_db)):
+    uid = current_user_id(request)
+    ws = _get_owned_workspace(workspace_id, uid, db)  # 404 if not owner
+    nodes = db.query(SynthesisNode).filter(SynthesisNode.workspace_id == ws.id).all()
+    return [_serialize_synthesis(db, n) for n in nodes]
+
+
+@router.post("/workspaces/{workspace_id}/synthesis", response_model=SynthesisNodeOut, status_code=201)
+def create_synthesis_node(workspace_id: uuid.UUID, payload: SynthesisNodeCreate,
+                          request: Request, db: Session = Depends(get_db)):
+    uid = current_user_id(request)
+    ws = _get_owned_workspace(workspace_id, uid, db)
+    node = SynthesisNode(workspace_id=ws.id, title=payload.title or "Synthesis",
+                         x_pos=payload.x_pos, y_pos=payload.y_pos)
+    db.add(node); db.commit(); db.refresh(node)
+    return _serialize_synthesis(db, node)
+
+
+@router.patch("/workspaces/{workspace_id}/synthesis/{node_id}", response_model=SynthesisNodeOut)
+def update_synthesis_node(workspace_id: uuid.UUID, node_id: uuid.UUID, payload: SynthesisNodeUpdate,
+                          request: Request, db: Session = Depends(get_db)):
+    uid = current_user_id(request)
+    ws = _get_owned_workspace(workspace_id, uid, db)
+    node = _get_owned_synthesis(db, ws, node_id)  # 404 if not in this workspace
+    if payload.title is not None: node.title = payload.title
+    if payload.x_pos is not None: node.x_pos = payload.x_pos
+    if payload.y_pos is not None: node.y_pos = payload.y_pos
+    db.commit(); db.refresh(node)
+    return _serialize_synthesis(db, node)
+
+
+@router.delete("/workspaces/{workspace_id}/synthesis/{node_id}", status_code=204)
+def delete_synthesis_node(workspace_id: uuid.UUID, node_id: uuid.UUID,
+                          request: Request, db: Session = Depends(get_db)):
+    uid = current_user_id(request)
+    ws = _get_owned_workspace(workspace_id, uid, db)
+    node = _get_owned_synthesis(db, ws, node_id)
+    db.delete(node); db.commit()  # inputs cascade-delete
+
+
+@router.post("/workspaces/{workspace_id}/synthesis/{node_id}/inputs", status_code=201)
+def add_synthesis_input(workspace_id: uuid.UUID, node_id: uuid.UUID, payload: SynthesisInputCreate,
+                        request: Request, db: Session = Depends(get_db)):
+    uid = current_user_id(request)
+    ws = _get_owned_workspace(workspace_id, uid, db)
+    node = _get_owned_synthesis(db, ws, node_id)
+    # The document must belong to the same workspace. Never wire across notebooks.
+    doc = db.query(Document).filter_by(id=payload.document_id, workspace_id=ws.id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Source not found in this notebook.")
+    existing = db.query(SynthesisInput).filter_by(
+        synthesis_node_id=node.id, document_id=doc.id).first()
+    if existing:
+        return  # idempotent
+    db.add(SynthesisInput(synthesis_node_id=node.id, document_id=doc.id))
+    db.commit()
+
+
+@router.delete("/workspaces/{workspace_id}/synthesis/{node_id}/inputs/{document_id}", status_code=204)
+def remove_synthesis_input(workspace_id: uuid.UUID, node_id: uuid.UUID, document_id: uuid.UUID,
+                           request: Request, db: Session = Depends(get_db)):
+    uid = current_user_id(request)
+    ws = _get_owned_workspace(workspace_id, uid, db)
+    node = _get_owned_synthesis(db, ws, node_id)
+    link = db.query(SynthesisInput).filter_by(
+        synthesis_node_id=node.id, document_id=document_id).first()
+    if not link:
+        raise HTTPException(status_code=404, detail="Connection not found.")
+    db.delete(link); db.commit()
+
+
+# ── Private Helpers for Synthesis ─────────────────────────────────────────────
+
+def _get_owned_synthesis(db: Session, ws: Workspace, node_id: uuid.UUID) -> SynthesisNode:
+    node = db.query(SynthesisNode).filter_by(id=node_id, workspace_id=ws.id).first()
+    if not node:
+        raise HTTPException(status_code=404, detail="Synthesis node not found.")
+    return node
+
+
+def _serialize_synthesis(db: Session, node: SynthesisNode) -> SynthesisNodeOut:
+    ids = [r.document_id for r in
+           db.query(SynthesisInput).filter_by(synthesis_node_id=node.id).all()]
+    out = SynthesisNodeOut.model_validate(node)
+    out.input_document_ids = ids
+    return out
+
+
+def scoped_document_ids(db: Session, ws: Workspace, synthesis_node_id: uuid.UUID | None) -> list[uuid.UUID] | None:
+    if synthesis_node_id is None:
+        return None
+    node = _get_owned_synthesis(db, ws, synthesis_node_id)
+    ids = [r.document_id for r in
+           db.query(SynthesisInput).filter_by(synthesis_node_id=node.id).all()]
+    return ids
+
 
