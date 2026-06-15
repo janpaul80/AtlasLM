@@ -1,0 +1,20 @@
+name: provider-leak-gate
+
+# Mandatory gate. A leak fails the job, which blocks merge when set as a
+# required status check in branch protection (recommended for main).
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+jobs:
+  leak-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run provider leak gate
+        run: bash ci/run_leak_gate.sh
+
+      - name: Punctuation lint (existing gate, kept)
+        run: bash scripts/lint_no_ai_punctuation.sh

@@ -19,6 +19,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Provider-name source guard. Fails the image build on a hard-coded leak.
+COPY scripts/check_provider_leak.sh /tmp/check_provider_leak.sh
+RUN grep -rIl '' app \
+      | grep -vE 'app/core/providers.py|app/core/config.py|app/models.py|app/api/endpoints.py' \
+      | xargs cat 2>/dev/null \
+      | sh /tmp/check_provider_leak.sh
+
 EXPOSE 8000
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

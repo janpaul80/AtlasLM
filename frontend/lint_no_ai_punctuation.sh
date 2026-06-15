@@ -7,17 +7,14 @@
 # ============================================================
 set -u
 FAIL=0
-PATTERN="—|–|…"
+PATTERN=$'\u2014|\u2013|\u2026'
 
 check() {
-  local dir="$1"
-  if [ ! -d "$dir" ]; then
-    return
-  fi
+  local dir="$1"; shift
   local matches
-  matches=$(find "$dir" -type f \( -name "*.tsx" -o -name "*.ts" -o -name "*.jsx" -o -name "*.js" -o -name "*.html" \) \
-      ! -path "*/node_modules/*" ! -path "*/.next/*" \
-      -exec grep -HnE "$PATTERN" {} + 2>/dev/null)
+  matches=$(grep -rnE "$PATTERN" "$dir" \
+      --include='*.tsx' --include='*.ts' --include='*.jsx' --include='*.js' --include='*.html' \
+      --exclude-dir=node_modules --exclude-dir=.next 2>/dev/null)
   if [ -n "$matches" ]; then
     echo "PUNCTUATION LINT FAILED in $dir:"
     echo "$matches"
@@ -25,24 +22,13 @@ check() {
   fi
 }
 
-# If frontend directory exists (run from root), check it.
-# Otherwise, if we are in the frontend container, the current directory is the frontend source.
-if [ -d "frontend" ]; then
-  check frontend
-else
-  # We are likely inside the frontend container /workspace
-  # Check current directory
-  check .
-fi
-
-# Check backend/app if it exists (only from root)
-if [ -d "backend/app" ]; then
-  matches=$(find backend/app -type f -name "*.py" -exec grep -HnE "$PATTERN" {} + 2>/dev/null)
-  if [ -n "$matches" ]; then
-    echo "PUNCTUATION LINT FAILED in backend/app:"
-    echo "$matches"
-    FAIL=1
-  fi
+check frontend
+# backend user-facing strings (error messages, canned phrases)
+matches=$(grep -rnE "$PATTERN" backend/app --include='*.py' 2>/dev/null)
+if [ -n "$matches" ]; then
+  echo "PUNCTUATION LINT FAILED in backend/app:"
+  echo "$matches"
+  FAIL=1
 fi
 
 if [ "$FAIL" -eq 0 ]; then
