@@ -124,7 +124,11 @@ def redis_healthy() -> bool:
 STUDIO_QUEUE_KEY = "atlaslm:studio:queue"
 
 
-def enqueue_studio_job(*, output_id: uuid.UUID, workspace_id: uuid.UUID) -> str:
+def enqueue_studio_job(
+    *,
+    output_id: uuid.UUID,
+    scope_doc_ids: Optional[list[uuid.UUID]] = None,
+) -> str:
     """
     Push a Studio generation job. Raises redis.RedisError on connectivity
     failure (caller decides whether to fall back to synchronous generation).
@@ -135,7 +139,7 @@ def enqueue_studio_job(*, output_id: uuid.UUID, workspace_id: uuid.UUID) -> str:
         {
             "job_id": job_id,
             "output_id": str(output_id),
-            "workspace_id": str(workspace_id),
+            "scope_doc_ids": [str(x) for x in scope_doc_ids] if scope_doc_ids is not None else None,
         }
     ).encode("utf-8")
     r.lpush(STUDIO_QUEUE_KEY, envelope)

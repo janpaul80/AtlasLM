@@ -77,10 +77,26 @@ class OpenAICompatibleEmbedding(EmbeddingProvider):
         self.model = model
         self.model_id = model
         self.dimensions = 1536
-        self._client = httpx.AsyncClient(limits=_HTTP_LIMITS, timeout=30.0)
+        self.timeout = 30.0
+
+    @property
+    def client(self) -> httpx.AsyncClient:
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if not hasattr(self, "_clients"):
+            self._clients = {}
+        if loop not in self._clients:
+            self._clients[loop] = httpx.AsyncClient(limits=_HTTP_LIMITS, timeout=self.timeout)
+        return self._clients[loop]
 
     async def aclose(self):
-        await self._client.aclose()
+        if hasattr(self, "_clients"):
+            for c in self._clients.values():
+                await c.aclose()
+            self._clients.clear()
 
     async def embed_query(self, text: str) -> List[float]:
         res = await self.embed_documents([text])
@@ -99,7 +115,7 @@ class OpenAICompatibleEmbedding(EmbeddingProvider):
         }
         payload = {"input": texts, "model": self.model}
         try:
-            response = await self._client.post(
+            response = await self.client.post(
                 f"{self.base_url}/embeddings", headers=headers, json=payload
             )
             response.raise_for_status()
@@ -121,6 +137,7 @@ class OpenAICompatibleEmbedding(EmbeddingProvider):
         return vectors
 
 
+
 class OllamaEmbedding(EmbeddingProvider):
     def __init__(self, base_url: str, model: str = "nomic-embed-text"):
         self.base_url = base_url.rstrip("/")
@@ -130,10 +147,26 @@ class OllamaEmbedding(EmbeddingProvider):
         # Padding is consistent ONLY within this model space - which is why
         # model_id is persisted per document and enforced at query time.
         self.dimensions = 1536
-        self._client = httpx.AsyncClient(limits=_HTTP_LIMITS, timeout=30.0)
+        self.timeout = 30.0
+
+    @property
+    def client(self) -> httpx.AsyncClient:
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if not hasattr(self, "_clients"):
+            self._clients = {}
+        if loop not in self._clients:
+            self._clients[loop] = httpx.AsyncClient(limits=_HTTP_LIMITS, timeout=self.timeout)
+        return self._clients[loop]
 
     async def aclose(self):
-        await self._client.aclose()
+        if hasattr(self, "_clients"):
+            for c in self._clients.values():
+                await c.aclose()
+            self._clients.clear()
 
     async def embed_query(self, text: str) -> List[float]:
         res = await self.embed_documents([text])
@@ -143,7 +176,7 @@ class OllamaEmbedding(EmbeddingProvider):
         embeddings: List[List[float]] = []
         for text in texts:
             try:
-                response = await self._client.post(
+                response = await self.client.post(
                     f"{self.base_url}/api/embeddings",
                     json={"model": self.model, "prompt": text},
                 )
@@ -163,6 +196,7 @@ class OllamaEmbedding(EmbeddingProvider):
         return embeddings
 
 
+
 # ---------------------------------------------------------------------------
 # LLM implementations
 # ---------------------------------------------------------------------------
@@ -172,10 +206,26 @@ class OpenAICompatibleLLM(LLMProvider):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model
-        self._client = httpx.AsyncClient(limits=_HTTP_LIMITS, timeout=90.0)
+        self.timeout = 90.0
+
+    @property
+    def client(self) -> httpx.AsyncClient:
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if not hasattr(self, "_clients"):
+            self._clients = {}
+        if loop not in self._clients:
+            self._clients[loop] = httpx.AsyncClient(limits=_HTTP_LIMITS, timeout=self.timeout)
+        return self._clients[loop]
 
     async def aclose(self):
-        await self._client.aclose()
+        if hasattr(self, "_clients"):
+            for c in self._clients.values():
+                await c.aclose()
+            self._clients.clear()
 
     def _headers(self):
         return {
@@ -190,7 +240,7 @@ class OpenAICompatibleLLM(LLMProvider):
         messages.append({"role": "user", "content": prompt})
         payload = {"model": self.model, "messages": messages, "temperature": 0.1}
         try:
-            response = await self._client.post(
+            response = await self.client.post(
                 f"{self.base_url}/chat/completions",
                 headers=self._headers(),
                 json=payload,
@@ -213,7 +263,7 @@ class OpenAICompatibleLLM(LLMProvider):
             "stream": True,
         }
         try:
-            async with self._client.stream(
+            async with self.client.stream(
                 "POST",
                 f"{self.base_url}/chat/completions",
                 headers=self._headers(),
@@ -243,14 +293,31 @@ class OpenAICompatibleLLM(LLMProvider):
             ) from exc
 
 
+
 class OllamaLLM(LLMProvider):
     def __init__(self, base_url: str, model: str = "llama3"):
         self.base_url = base_url.rstrip("/")
         self.model = model
-        self._client = httpx.AsyncClient(limits=_HTTP_LIMITS, timeout=120.0)
+        self.timeout = 120.0
+
+    @property
+    def client(self) -> httpx.AsyncClient:
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if not hasattr(self, "_clients"):
+            self._clients = {}
+        if loop not in self._clients:
+            self._clients[loop] = httpx.AsyncClient(limits=_HTTP_LIMITS, timeout=self.timeout)
+        return self._clients[loop]
 
     async def aclose(self):
-        await self._client.aclose()
+        if hasattr(self, "_clients"):
+            for c in self._clients.values():
+                await c.aclose()
+            self._clients.clear()
 
     async def generate(self, prompt: str, system_prompt: str = "") -> str:
         payload = {
@@ -263,7 +330,7 @@ class OllamaLLM(LLMProvider):
             "stream": False,
         }
         try:
-            response = await self._client.post(f"{self.base_url}/api/chat", json=payload)
+            response = await self.client.post(f"{self.base_url}/api/chat", json=payload)
             response.raise_for_status()
             return response.json()["message"]["content"]
         except Exception as exc:
@@ -282,7 +349,7 @@ class OllamaLLM(LLMProvider):
             "stream": True,
         }
         try:
-            async with self._client.stream(
+            async with self.client.stream(
                 "POST", f"{self.base_url}/api/chat", json=payload
             ) as response:
                 response.raise_for_status()
@@ -303,6 +370,7 @@ class OllamaLLM(LLMProvider):
                 "The local AtlasLM engine connection was interrupted.",
                 internal_detail=f"Ollama stream failed ({self.base_url}): {exc!r}",
             ) from exc
+
 
 
 # ---------------------------------------------------------------------------

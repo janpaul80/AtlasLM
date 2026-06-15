@@ -103,18 +103,76 @@ async def process_job(job: dict) -> None:
 
 
 async def process_studio_job(job: dict) -> None:
-    """Runs Studio generation for one output. Own DB session per job."""
-    from .services.studio import StudioService
+    """Consumes the studio queue job enqueued by create_studio_output. Runs the
+    scoped retrieval (same as chat), generates the artifact, validates, saves."""
+    from .services.studio_outputs import generate_studio_output, StudioGenerationError
+    from .services.rag import retrieve_chunks
+    from .models import StudioOutput, StudioOutputCitation
+    from .core.database import SessionLocal
 
     output_id = job.get("output_id")
+    scope_doc_ids_str = job.get("scope_doc_ids")
+    scope_doc_ids = [uuid.UUID(x) for x in scope_doc_ids_str] if scope_doc_ids_str is not None else None
+
     db = SessionLocal()
     try:
-        service = StudioService(db)
-        await service.generate(uuid.UUID(output_id))
+        output = db.get(StudioOutput, uuid.UUID(output_id))
+        if not output:
+            logger.error("Studio output %s not found in DB", output_id)
+            return
+
+        output.status = "processing"
+        output.error = None
+        db.commit()
+
+        # Seed query
+        def _seed_query(output_type: str) -> str:
+            return {
+                "mind_map": "key concepts, central topics, and relationships across the sources",
+                "study_guide": "key concepts, definitions, main points, and summaries across the sources",
+                "quiz": "key facts, assertions, claims, and detailed information across the sources",
+                "flashcards": "key concepts, vocabulary, facts, and Q&A details across the sources",
+            }.get(output_type, "key concepts and main points across the sources")
+
+        from .services.studio_outputs import TOP_K
+        chunks = retrieve_chunks(
+            notebook_id=str(output.workspace_id),
+            query=_seed_query(output.output_type),
+            source_ids=[str(x) for x in scope_doc_ids] if scope_doc_ids is not None else [],
+            k=TOP_K[output.output_type],
+        )
+
+        content, citations = generate_studio_output(output.output_type, chunks)
+        output.content = content
+        output.status = "ready"
+        output.error = None
+
+        db.add_all([
+            StudioOutputCitation(
+                studio_output_id=output.id,
+                document_id=uuid.UUID(c["document_id"]) if isinstance(c["document_id"], str) else c["document_id"],
+                page_number=c.get("page_number")
+            )
+            for c in citations
+        ])
+        db.commit()
+        logger.info("Studio job %s complete: output ready.", output_id)
+    except StudioGenerationError as e:
+        db.rollback()
+        output = db.get(StudioOutput, uuid.UUID(output_id))
+        if output:
+            output.status = "failed"
+            output.error = str(e)
+            db.commit()
+        logger.error("Studio job %s failed: %s", output_id, e)
     except Exception as e:
-        logger.error("Studio job %s failed: %s", output_id, e, exc_info=True)
-        # StudioService.generate marks the row failed itself; this is the
-        # last-resort guard so the worker loop never dies.
+        db.rollback()
+        output = db.get(StudioOutput, uuid.UUID(output_id))
+        if output:
+            output.status = "failed"
+            output.error = "Generation failed. Please try again."
+            db.commit()
+        logger.error("Studio job %s failed (unexpected): %s", output_id, e, exc_info=True)
     finally:
         db.close()
 

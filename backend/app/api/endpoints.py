@@ -27,8 +27,8 @@ from ..services.jobs import enqueue_ingestion_job, enqueue_studio_job, redis_hea
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.encoders import jsonable_encoder
 from ..services.studio import StudioService, OUTPUT_TYPES
-from ..models import StudioOutput
-from ..schemas import StudioOutputCreate, StudioOutputOut
+from ..models import StudioOutput, StudioOutputCitation
+from ..schemas import StudioOutputCreate, StudioOutputOut, StudioCitationOut
 from ..services.research.service import DeepResearchService
 from ..services.research import jobs as research_jobs
 from pydantic import BaseModel
@@ -547,133 +547,120 @@ def list_studio_types():
     """Available Studio output types (drives the frontend Studio panel)."""
     return {
         "types": [
-            {"id": k, "label": v["label"]} for k, v in OUTPUT_TYPES.items()
+            {"id": "mind_map", "label": "Mind Map"},
+            {"id": "study_guide", "label": "Study Guide"},
+            {"id": "quiz", "label": "Quiz"},
+            {"id": "flashcards", "label": "Flashcards"},
         ]
     }
 
 
-@router.get(
-    "/workspaces/{workspace_id}/studio",
-    response_model=List[StudioOutputOut],
-)
+
+@router.post("/workspaces/{workspace_id}/studio", response_model=StudioOutputOut, status_code=201)
+def create_studio_output(
+    request: Request,
+    workspace_id: uuid.UUID,
+    payload: StudioOutputCreate,
+    db: Session = Depends(get_db),
+):
+    uid = current_user_id(request)
+    ws = _get_owned_workspace(workspace_id, uid, db)
+
+    # Resolve scope with the EXISTING Patch 007 helper. A forged or cross-user
+    # synthesis_node_id yields 404 here and can never widen scope.
+    scope = scoped_document_ids(db, ws, payload.synthesis_node_id)  # None | [] | [ids]
+    if scope is not None and len(scope) == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="No sources are wired into this synthesis node yet. "
+                   "Connect one or more sources to it, then generate again.",
+        )
+
+    title = payload.title or _default_studio_title(payload.output_type)
+    output = StudioOutput(
+        id=uuid.uuid4(),
+        workspace_id=ws.id,
+        synthesis_node_id=payload.synthesis_node_id,
+        output_type=payload.output_type,
+        title=title,
+        status="pending",
+    )
+    db.add(output)
+    db.commit()
+    db.refresh(output)
+
+    # Enqueue on the SAME Redis studio queue from Patch 005 (dual-queue safe).
+    enqueue_studio_job(output_id=output.id, scope_doc_ids=scope)
+
+    return _serialize_studio(db, output)
+
+
+@router.get("/workspaces/{workspace_id}/studio", response_model=list[StudioOutputOut])
 def list_studio_outputs(
     request: Request,
     workspace_id: uuid.UUID,
     db: Session = Depends(get_db),
 ):
     uid = current_user_id(request)
-    _get_owned_workspace(workspace_id, uid, db)
-    return (
+    ws = _get_owned_workspace(workspace_id, uid, db)
+    rows = (
         db.query(StudioOutput)
-        .filter(StudioOutput.workspace_id == workspace_id)
+        .filter(StudioOutput.workspace_id == ws.id)
         .order_by(StudioOutput.created_at.desc())
         .all()
     )
+    return [_serialize_studio(db, r) for r in rows]
 
 
-@router.post(
-    "/workspaces/{workspace_id}/studio",
-    response_model=StudioOutputOut,
-    status_code=status.HTTP_201_CREATED,
-)
-async def create_studio_output(
+@router.get("/workspaces/{workspace_id}/studio/{output_id}", response_model=StudioOutputOut)
+def get_studio_output(
     request: Request,
     workspace_id: uuid.UUID,
-    body: StudioOutputCreate,
+    output_id: uuid.UUID,
     db: Session = Depends(get_db),
 ):
     uid = current_user_id(request)
     ws = _get_owned_workspace(workspace_id, uid, db)
-
-    if body.output_type not in OUTPUT_TYPES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unknown output type. Supported: {', '.join(OUTPUT_TYPES)}.",
-        )
-
-    ready_docs = (
-        db.query(Document)
-        .filter(Document.workspace_id == workspace_id, Document.status == "ready")
-        .count()
-    )
-    if ready_docs == 0:
-        raise HTTPException(
-            status_code=400,
-            detail="Add at least one source to this notebook before generating "
-                   "a Studio output.",
-        )
-
-    spec = OUTPUT_TYPES[body.output_type]
-    out = StudioOutput(
-        id=uuid.uuid4(),
-        workspace_id=workspace_id,
-        output_type=body.output_type,
-        title=body.title or spec["title_template"].format(workspace=ws.name),
-        document_ids=[str(d) for d in body.document_ids] if body.document_ids else None,
-        status="pending",
-    )
-    db.add(out)
-    db.commit()
-    db.refresh(out)
-
-    # Async path
-    if redis_healthy():
-        try:
-            enqueue_studio_job(output_id=out.id, workspace_id=workspace_id)
-        except Exception:
-            pass  # fall through to sync
-        else:
-            return JSONResponse(
-                status_code=status.HTTP_202_ACCEPTED,
-                content=jsonable_encoder(StudioOutputOut.model_validate(out)),
-            )
-
-    # Sync fallback (Redis down): generate inline.
-    service = StudioService(db)
-    out = await service.generate(out.id)
-    if out.status == "failed":
-        raise HTTPException(status_code=422, detail=out.error_message)
-    return out
+    output = db.query(StudioOutput).filter_by(id=output_id, workspace_id=ws.id).first()
+    if not output:
+        raise HTTPException(status_code=404, detail="Studio output not found.")
+    return _serialize_studio(db, output)
 
 
-@router.get("/studio/{output_id}", response_model=StudioOutputOut)
-def get_studio_output(
-    request: Request,
-    output_id: uuid.UUID,
-    db: Session = Depends(get_db),
-):
-    uid = current_user_id(request)
-    out = db.query(StudioOutput).filter(StudioOutput.id == output_id).first()
-    if not out:
-        raise HTTPException(status_code=404, detail="Studio output not found")
-    try:
-        _get_owned_workspace(out.workspace_id, uid, db)
-    except HTTPException as exc:
-        if exc.status_code == 404:
-            raise HTTPException(status_code=404, detail="Studio output not found")
-        raise
-    return out
-
-
-@router.delete("/studio/{output_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/workspaces/{workspace_id}/studio/{output_id}", status_code=204)
 def delete_studio_output(
     request: Request,
+    workspace_id: uuid.UUID,
     output_id: uuid.UUID,
     db: Session = Depends(get_db),
 ):
     uid = current_user_id(request)
-    out = db.query(StudioOutput).filter(StudioOutput.id == output_id).first()
-    if not out:
-        raise HTTPException(status_code=404, detail="Studio output not found")
-    try:
-        _get_owned_workspace(out.workspace_id, uid, db)
-    except HTTPException as exc:
-        if exc.status_code == 404:
-            raise HTTPException(status_code=404, detail="Studio output not found")
-        raise
-    db.delete(out)
+    ws = _get_owned_workspace(workspace_id, uid, db)
+    output = db.query(StudioOutput).filter_by(id=output_id, workspace_id=ws.id).first()
+    if not output:
+        raise HTTPException(status_code=404, detail="Studio output not found.")
+    db.delete(output)
     db.commit()
-    return
+    return None
+
+
+# ---------- helpers ----------
+
+def _default_studio_title(output_type: str) -> str:
+    return {
+        "mind_map": "Mind Map",
+        "study_guide": "Study Guide",
+        "quiz": "Quiz",
+        "flashcards": "Flashcards",
+    }.get(output_type, "Studio Output")
+
+
+def _serialize_studio(db, output):
+    cites = (db.query(StudioOutputCitation)
+               .filter_by(studio_output_id=output.id).all())
+    out = StudioOutputOut.model_validate(output)
+    out.citations = [StudioCitationOut.model_validate(c) for c in cites]
+    return out
 
 
 # ---- Deep Research schemas --------------------------------------------------

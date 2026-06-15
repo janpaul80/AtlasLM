@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Literal
 from uuid import UUID
 from datetime import datetime
 
@@ -91,22 +91,36 @@ class TextIngestRequest(BaseModel):
     content: str = Field(..., min_length=1)
     provider: Optional[str] = None
 
+StudioOutputType = Literal["mind_map", "study_guide", "quiz", "flashcards"]
+
+
 class StudioOutputCreate(BaseModel):
-    output_type: str
-    title: Optional[str] = None
-    document_ids: Optional[List[UUID]] = None  # None = whole notebook
+    output_type: StudioOutputType
+    title: str | None = None
+    # Optional. When set, generation is scoped to this synthesis node's inputs,
+    # exactly like scoped chat in Patch 007. When null, uses the whole workspace.
+    synthesis_node_id: UUID | None = None
+
+
+class StudioCitationOut(BaseModel):
+    document_id: UUID
+    page_number: int | None = None
+
+    class Config:
+        from_attributes = True
+
 
 class StudioOutputOut(BaseModel):
     id: UUID
     workspace_id: UUID
-    output_type: str
+    synthesis_node_id: UUID | None
+    output_type: StudioOutputType
     title: str
-    content: Optional[str] = None
-    citations: Optional[List[dict]] = None
-    document_ids: Optional[List[str]] = None
     status: str
-    error_message: Optional[str] = None
-    created_at: Optional[datetime] = None
+    content: Any | None
+    error: str | None
+    created_at: datetime
+    citations: list[StudioCitationOut] = []
 
     class Config:
         from_attributes = True

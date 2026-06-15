@@ -105,16 +105,19 @@ export default function Dashboard() {
   interface StudioOutput {
     id: string;
     workspace_id: string;
+    synthesis_node_id: string | null;
     output_type: string;
     title: string;
-    content: string | null;
+    content: any | null;
     citations: any[] | null;
     status: "pending" | "processing" | "ready" | "failed";
     error_message: string | null;
+    error: string | null;
     created_at: string;
   }
   const [studioOutputs, setStudioOutputs] = useState<StudioOutput[]>([]);
   const [studioTypes, setStudioTypes] = useState<{id: string; label: string}[]>([]);
+  const [synthesisNodes, setSynthesisNodes] = useState<any[]>([]);
   const [openOutput, setOpenOutput] = useState<StudioOutput | null>(null);
   const [activeTab, setActiveTab] = useState<"canvas" | "chat" | "studio">("canvas");
 
@@ -246,6 +249,15 @@ export default function Dashboard() {
     }
   };
 
+  const fetchSynthesisNodes = async (wsId: string) => {
+    try {
+      const data = await apiClient.get<any[]>(`/api/v1/workspaces/${wsId}/synthesis`);
+      setSynthesisNodes(data);
+    } catch (e) {
+      console.error("Failed to load synthesis nodes:", e);
+    }
+  };
+
   // When workspace changes, fetch documents & sessions + save to localStorage
   useEffect(() => {
     if (selectedWorkspace) {
@@ -255,6 +267,7 @@ export default function Dashboard() {
       fetchDocuments(selectedWorkspace.id);
       fetchSessions(selectedWorkspace.id);
       fetchStudioOutputs(selectedWorkspace.id);
+      fetchSynthesisNodes(selectedWorkspace.id);
       setSelectedSessionId(null);
       setMessages([]);
       setStreamingText("");
@@ -488,17 +501,13 @@ export default function Dashboard() {
     try {
       const res = await apiClient.postRaw(`/api/v1/workspaces/${selectedWorkspace.id}/studio`, {
         output_type: outputType,
+        synthesis_node_id: activeScopeNode?.id || null,
       });
       const body = await res.json();
-      if (res.status === 202) {
+      if (res.status === 202 || res.status === 201 || res.status === 250 || res.status === 200) {
         setStudioOutputs((prev) => [body, ...prev]);
-        pollStudioOutput(body.id);
+        pollStudioOutput(body.id, selectedWorkspace.id);
         setActiveTab("studio");
-        setUiError("");
-      } else if (res.status === 201 || res.status === 200) {
-        setStudioOutputs((prev) => [body, ...prev]);
-        setActiveTab("studio");
-        setOpenOutput(body);
         setUiError("");
       } else {
         setUiError(body.detail || "Failed to generate Studio output.");
@@ -509,10 +518,12 @@ export default function Dashboard() {
     }
   };
 
-  const pollStudioOutput = (outputId: string) => {
+  const pollStudioOutput = (outputId: string, wsId?: string) => {
+    const workspaceId = wsId || selectedWorkspace?.id;
+    if (!workspaceId) return;
     const interval = setInterval(async () => {
       try {
-        const out = await apiClient.get<StudioOutput>(`/api/v1/studio/${outputId}`);
+        const out = await apiClient.get<StudioOutput>(`/api/v1/workspaces/${workspaceId}/studio/${outputId}`);
         setStudioOutputs((prev) => prev.map((o) => (o.id === out.id ? out : o)));
         
         // Also update open output details if open
@@ -530,12 +541,13 @@ export default function Dashboard() {
         console.error("Polling error for Studio output:", err);
         clearInterval(interval);
       }
-    }, 2000);
+    }, 1500);
   };
 
   const handleDeleteStudioOutput = async (outputId: string) => {
+    if (!selectedWorkspace) return;
     try {
-      await apiClient.del(`/api/v1/studio/${outputId}`);
+      await apiClient.del(`/api/v1/workspaces/${selectedWorkspace.id}/studio/${outputId}`);
       setStudioOutputs((prev) => prev.filter((o) => o.id !== outputId));
       setOpenOutput((curr) => (curr && curr.id === outputId ? null : curr));
     } catch (e) {
@@ -751,6 +763,233 @@ export default function Dashboard() {
     });
   };
 
+  const renderCitationsFooter = (citations: any[]) => {
+    if (!citations || citations.length === 0) return null;
+    return (
+      <div className="mt-8 pt-4 border-t border-zinc-900/60">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 block mb-2.5">
+          Sources Cited
+        </span>
+        <div className="flex flex-wrap gap-2">
+          {citations.map((cite: any, idx: number) => {
+            const doc = sources.find((s) => s.id === cite.document_id);
+            const filename = doc ? doc.filename : "Untitled Document";
+            const tag = `source_${idx + 1}`;
+            const details = {
+              tag,
+              document_id: cite.document_id,
+              filename,
+              page_number: cite.page_number,
+              content: `This source contributed context to the generation of this Studio output.`,
+            };
+            return (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => setSelectedCitation(details)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-medium bg-zinc-900 text-zinc-300 border border-zinc-850 hover:bg-zinc-800 transition cursor-pointer"
+              >
+                <span>{filename}</span>
+                {cite.page_number != null && (
+                  <span className="text-[9px] text-zinc-500">(Page {cite.page_number})</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  const renderMindMap = (content: any) => {
+    const root = content.root || "Central Topic";
+    const branches = content.branches || [];
+    const colors = [
+      "border-emerald-500/20 bg-emerald-950/5 text-emerald-400",
+      "border-rose-500/20 bg-rose-950/5 text-rose-400",
+      "border-amber-500/20 bg-amber-950/5 text-amber-400",
+      "border-sky-500/20 bg-sky-950/5 text-sky-400",
+      "border-violet-500/20 bg-violet-950/5 text-violet-400"
+    ];
+    return (
+      <div className="flex flex-col items-center py-4">
+        <div className="px-5 py-2.5 rounded-full font-bold text-white text-xs mb-5 bg-orange-600 border border-orange-500/25">
+          {root}
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 w-full">
+          {branches.map((b: any, idx: number) => {
+            const colorClass = colors[idx % colors.length];
+            return (
+              <div key={idx} className={`rounded-xl border p-4 flex flex-col gap-1.5 ${colorClass}`}>
+                <h4 className="text-[11px] font-extrabold uppercase tracking-wider">{b.label}</h4>
+                <ul className="space-y-1.5 mt-1">
+                  {(b.children || []).map((child: string, cIdx: number) => (
+                    <li key={cIdx} className="text-zinc-350 text-[11px] flex items-start gap-2 leading-relaxed">
+                      <span className="h-1.5 w-1.5 rounded-full bg-orange-500 mt-1.5 flex-shrink-0" />
+                      <span>{child}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  const StudyGuideRenderer = ({ content }: { content: any }) => {
+    const [openSectionIdx, setOpenSectionIdx] = useState<number | null>(0);
+    const sections = content.sections || [];
+    return (
+      <div className="flex flex-col gap-2.5 w-full">
+        {sections.map((section: any, idx: number) => {
+          const isOpen = openSectionIdx === idx;
+          return (
+            <div key={idx} className="rounded-xl border border-zinc-900 bg-zinc-950/20 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setOpenSectionIdx(isOpen ? null : idx)}
+                className="w-full text-left px-4 py-3.5 flex items-center justify-between text-white font-bold text-xs hover:bg-zinc-900/30 transition-colors"
+              >
+                <span>{section.heading}</span>
+                <span className="text-zinc-550 text-[10px]">{isOpen ? "▲" : "▼"}</span>
+              </button>
+              {isOpen && (
+                <div className="px-4 pb-4 pt-1.5 flex flex-col gap-3.5 border-t border-zinc-900/40">
+                  <p className="text-zinc-400 text-xs leading-relaxed italic">{section.summary}</p>
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">Key Points</span>
+                    <ul className="space-y-1.5">
+                      {(section.key_points || []).map((point: string, pIdx: number) => (
+                        <li key={pIdx} className="text-zinc-350 text-xs flex items-start gap-2 leading-relaxed">
+                          <span className="h-1.5 w-1.5 rounded-full bg-orange-500 mt-1.5 flex-shrink-0" />
+                          <span>{point}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const QuizRenderer = ({ content }: { content: any }) => {
+    const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number>>({});
+    const questions = content.questions || [];
+    return (
+      <div className="flex flex-col gap-5 w-full">
+        {questions.map((q: any, qIdx: number) => {
+          const chosenIdx = selectedAnswers[qIdx];
+          const hasSelected = chosenIdx !== undefined;
+          const correctIdx = q.answer_index;
+          return (
+            <div key={qIdx} className="p-4 rounded-xl border border-zinc-900 bg-zinc-950/25 flex flex-col gap-3.5">
+              <h4 className="text-white text-xs font-bold leading-relaxed">{qIdx + 1}. {q.question}</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {(q.choices || []).map((choice: string, cIdx: number) => {
+                  const isCorrect = cIdx === correctIdx;
+                  const isSelected = cIdx === chosenIdx;
+                  let btnStyle = "border-zinc-850 hover:bg-zinc-900/30 text-zinc-300";
+                  if (hasSelected) {
+                    if (isCorrect) {
+                      btnStyle = "border-green-500/25 bg-green-950/15 text-green-400 font-medium";
+                    } else if (isSelected) {
+                      btnStyle = "border-red-500/25 bg-red-950/15 text-red-400 font-medium";
+                    } else {
+                      btnStyle = "border-zinc-900 bg-zinc-950/15 text-zinc-600 opacity-60";
+                    }
+                  }
+                  return (
+                    <button
+                      key={cIdx}
+                      type="button"
+                      disabled={hasSelected}
+                      onClick={() => setSelectedAnswers(prev => ({ ...prev, [qIdx]: cIdx }))}
+                      className={`text-left p-2.5 rounded-lg border text-xs transition flex items-center justify-between ${btnStyle}`}
+                    >
+                      <span>{choice}</span>
+                      {hasSelected && isCorrect && <span className="text-green-400">✓</span>}
+                      {hasSelected && isSelected && !isCorrect && <span className="text-red-400">✕</span>}
+                    </button>
+                  );
+                })}
+              </div>
+              {hasSelected && (
+                <div className="text-[11px] leading-relaxed text-zinc-400 bg-zinc-900/30 border border-zinc-850/40 p-3 rounded-lg">
+                  <span className="font-bold text-white block mb-0.5">Explanation:</span>
+                  {q.explanation}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const FlashcardsRenderer = ({ content }: { content: any }) => {
+    const [cardIdx, setCardIdx] = useState(0);
+    const [isFlipped, setIsFlipped] = useState(false);
+    const cards = content.cards || [];
+    if (cards.length === 0) return <div className="text-zinc-500 text-xs">No cards.</div>;
+    const currentCard = cards[cardIdx];
+
+    const nextCard = () => {
+      setIsFlipped(false);
+      setCardIdx((prev) => (prev + 1) % cards.length);
+    };
+
+    const prevCard = () => {
+      setIsFlipped(false);
+      setCardIdx((prev) => (prev - 1 + cards.length) % cards.length);
+    };
+
+    return (
+      <div className="flex flex-col items-center gap-3 w-full max-w-md mx-auto py-2">
+        <div
+          onClick={() => setIsFlipped(!isFlipped)}
+          className="w-full h-48 rounded-2xl border border-zinc-900 bg-zinc-950/30 cursor-pointer select-none flex flex-col items-center justify-center p-6 text-center transition-all duration-300 hover:scale-[1.005]"
+        >
+          {!isFlipped ? (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[9px] uppercase font-bold tracking-wider text-orange-500 mb-1">Prompt</span>
+              <p className="text-white text-xs font-semibold leading-relaxed">{currentCard.front}</p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[9px] uppercase font-bold tracking-wider text-green-400 mb-1">Answer</span>
+              <p className="text-zinc-200 text-xs leading-relaxed">{currentCard.back}</p>
+            </div>
+          )}
+        </div>
+        <span className="text-[9px] text-zinc-500">Click card to flip</span>
+        
+        <div className="flex items-center justify-between w-full mt-1.5">
+          <button
+            type="button"
+            onClick={prevCard}
+            className="px-3.5 py-1.5 rounded-lg border border-zinc-850 hover:bg-zinc-900/30 text-xs text-zinc-300 transition duration-200"
+          >
+            ← Previous
+          </button>
+          <span className="text-xs text-zinc-400">{cardIdx + 1} / {cards.length}</span>
+          <button
+            type="button"
+            onClick={nextCard}
+            className="px-3.5 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-500 text-xs text-white font-bold transition duration-200"
+          >
+            Next →
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="h-screen w-screen bg-zinc-950 flex overflow-hidden text-zinc-150 relative">
       
@@ -958,8 +1197,18 @@ export default function Dashboard() {
                     >
                       &larr; Back to Studio outputs
                     </button>
-                    <h2 className="text-white text-lg font-bold">{openOutput.title}</h2>
-                    <span className="text-[9px] uppercase tracking-wider font-bold text-zinc-500 bg-zinc-900 px-2 py-0.5 rounded mt-1 inline-block">
+                    <div className="flex items-center gap-2.5">
+                      <h2 className="text-white text-lg font-bold">{openOutput.title}</h2>
+                      {openOutput.synthesis_node_id && (() => {
+                        const node = synthesisNodes.find((n) => n.id === openOutput.synthesis_node_id);
+                        return (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold bg-purple-950/40 text-purple-400 border border-purple-500/30">
+                            Scoped to: {node ? node.title : "Synthesis Node"}
+                          </span>
+                        );
+                      })()}
+                    </div>
+                    <span className="text-[9px] uppercase tracking-wider font-bold text-zinc-500 bg-zinc-900 px-2 py-0.5 rounded mt-1.5 inline-block">
                       {openOutput.output_type.replace("_", " ")}
                     </span>
                   </div>
@@ -970,36 +1219,72 @@ export default function Dashboard() {
                     Delete Output
                   </button>
                 </div>
-                <div className="text-zinc-200 text-xs leading-relaxed whitespace-pre-wrap font-sans bg-zinc-950/30 border border-zinc-900/60 p-6 rounded-xl">
-                  {renderMessageContentWithCitations(openOutput.content || "", openOutput.citations || [])}
+                
+                <div className="bg-zinc-950/30 border border-zinc-900/60 p-6 rounded-xl">
+                  {(() => {
+                    let parsedContent = null;
+                    if (typeof openOutput.content === "string") {
+                      try {
+                        parsedContent = JSON.parse(openOutput.content);
+                      } catch {
+                        parsedContent = openOutput.content;
+                      }
+                    } else {
+                      parsedContent = openOutput.content;
+                    }
+
+                    if (!parsedContent) {
+                      return <p className="text-zinc-500 text-xs">No content generated.</p>;
+                    }
+
+                    if (openOutput.output_type === "mind_map") {
+                      return renderMindMap(parsedContent);
+                    } else if (openOutput.output_type === "study_guide") {
+                      return <StudyGuideRenderer content={parsedContent} />;
+                    } else if (openOutput.output_type === "quiz") {
+                      return <QuizRenderer content={parsedContent} />;
+                    } else if (openOutput.output_type === "flashcards") {
+                      return <FlashcardsRenderer content={parsedContent} />;
+                    }
+
+                    return <p className="text-zinc-200 text-xs leading-relaxed whitespace-pre-wrap font-sans">{String(parsedContent)}</p>;
+                  })()}
+                  
+                  {renderCitationsFooter(openOutput.citations || [])}
                 </div>
               </div>
             ) : (
               /* Grid / Main List View */
               <div className="max-w-3xl mx-auto w-full flex flex-col gap-6">
-                <div className="flex items-center justify-between border-b border-zinc-900/60 pb-4">
-                  <div>
-                    <h2 className="text-white font-extrabold text-base">AtlasLM Studio</h2>
-                    <p className="text-[10px] text-zinc-500">Generate structured reports and executive summaries grounded on your workspace corpus.</p>
-                  </div>
-                  
-                  {/* Generate menu */}
-                  <div className="flex items-center gap-2">
-                    {studioTypes.map((type) => (
-                      <button
-                        key={type.id}
-                        onClick={() => generateStudioOutput(type.id)}
-                        disabled={!hasReadySources}
-                        className="bg-orange-600 hover:bg-orange-500 disabled:opacity-40 disabled:pointer-events-none text-white font-bold px-3 py-2 rounded-lg text-xs transition-colors cursor-pointer"
-                      >
-                        Generate {type.label}
-                      </button>
-                    ))}
-                  </div>
+                <div className="border-b border-zinc-900/60 pb-4">
+                  <h2 className="text-white font-extrabold text-base">AtlasLM Studio</h2>
+                  <p className="text-[10px] text-zinc-550">Generate structured, grounded outputs from your workspace sources.</p>
+                </div>
+
+                {/* Generator Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                  {[
+                    { id: "mind_map", title: "Mind Map", desc: "Build a visual concept map.", icon: "🧠" },
+                    { id: "study_guide", title: "Study Guide", desc: "Interactive accordion guide.", icon: "📖" },
+                    { id: "quiz", title: "Interactive Quiz", desc: "Generate multi-choice questions.", icon: "❓" },
+                    { id: "flashcards", title: "Flashcards", desc: "Memorize facts with flip cards.", icon: "🎴" },
+                  ].map((card) => (
+                    <button
+                      key={card.id}
+                      onClick={() => generateStudioOutput(card.id)}
+                      disabled={!hasReadySources}
+                      className="flex flex-col text-left p-4 rounded-xl border border-zinc-900 bg-zinc-950/40 hover:border-zinc-800 transition duration-200 hover:-translate-y-0.5 disabled:opacity-40 disabled:pointer-events-none"
+                    >
+                      <span className="text-xl mb-2.5 inline-block p-1.5 rounded-lg bg-zinc-900">{card.icon}</span>
+                      <span className="text-white text-xs font-bold mb-1">{card.title}</span>
+                      <span className="text-[10px] text-zinc-500 leading-snug">{card.desc}</span>
+                    </button>
+                  ))}
                 </div>
 
                 {/* Outputs List */}
-                <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-3 mt-4">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">History & Saved Outputs</span>
                   {studioOutputs.length === 0 ? (
                     <div className="text-center p-12 border border-zinc-900 border-dashed rounded-xl">
                       <p className="text-xs text-zinc-500">No Studio outputs generated yet. Choose a format above to begin.</p>
@@ -1049,8 +1334,8 @@ export default function Dashboard() {
                                   Generating...
                                 </span>
                               ) : isFailed ? (
-                                <span className="text-red-500 font-bold max-w-[200px] truncate" title={out.error_message || "Generation failed"}>
-                                  Failed: {out.error_message || "Unknown error"}
+                                <span className="text-red-500 font-bold max-w-[200px] truncate" title={out.error || out.error_message || "Generation failed"}>
+                                  Failed: {out.error || out.error_message || "Unknown error"}
                                 </span>
                               ) : (
                                 <span className="text-zinc-550">Ready</span>

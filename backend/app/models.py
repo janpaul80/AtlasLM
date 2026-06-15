@@ -1,6 +1,6 @@
 import uuid
 from sqlalchemy import Column, String, Integer, ForeignKey, DateTime, Text, JSON, Float, Boolean, UniqueConstraint, CheckConstraint
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, UUID as PG_UUID, JSONB
 from datetime import datetime
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -87,22 +87,44 @@ class ChatMessage(Base):
 class StudioOutput(Base):
     __tablename__ = "studio_outputs"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     workspace_id = Column(
-        UUID(as_uuid=True),
+        PG_UUID(as_uuid=True),
         ForeignKey("workspaces.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=False, index=True,
     )
-    output_type = Column(String(50), nullable=False)   # 'report', 'executive_summary', ...
-    title = Column(String(255), nullable=False)
-    content = Column(Text, nullable=True)              # Markdown
-    citations = Column(JSON, nullable=True)            # same structure as ChatMessage.citations
-    document_ids = Column(JSON, nullable=True)         # optional source subset (list of UUID strings)
-    status = Column(String(20), nullable=False, default="pending", server_default="pending")
-    error_message = Column(Text, nullable=True)
+    synthesis_node_id = Column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("synthesis_nodes.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    output_type = Column(String, nullable=False)  # mind_map|study_guide|quiz|flashcards
+    title = Column(String, nullable=False, default="Untitled")
+    status = Column(String, nullable=False, default="pending")  # pending|processing|ready|failed
+    content = Column(JSONB, nullable=True)
+    error = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     workspace = relationship("Workspace", back_populates="studio_outputs")
+
+
+class StudioOutputCitation(Base):
+    __tablename__ = "studio_output_citations"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    studio_output_id = Column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("studio_outputs.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    document_id = Column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    page_number = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
 class WorkspaceGraphEdge(Base):
