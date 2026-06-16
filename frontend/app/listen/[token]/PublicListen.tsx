@@ -1,6 +1,7 @@
 // frontend/app/listen/[token]/PublicListen.tsx
 "use client";
 import { useRef, useState } from "react";
+import AtlasLogo from "@/app/components/brand/AtlasLogo";
 
 function fmt(s: number) {
   const m = Math.floor(s / 60);
@@ -62,7 +63,7 @@ export default function PublicListen(
         </div>
 
         <a className="ao-credit" href="/">
-          <span aria-hidden>✦</span> Made with AtlasLM
+          <AtlasLogo size={18} variant="mark" /> Made with Atlas LM
         </a>
       </div>
     </div>

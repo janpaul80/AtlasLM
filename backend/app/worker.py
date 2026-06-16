@@ -189,6 +189,10 @@ async def main() -> None:
     from .services.research.worker_handler import handle_research_queue
     threading.Thread(target=handle_research_queue, daemon=True).start()
 
+    # Start the Drive watch-channel renewal sweep thread (Patch 012)
+    from .services.connections.renewal_worker import run_forever as _watch_renewal
+    threading.Thread(target=_watch_renewal, daemon=True, name="watch-renewal").start()
+
     logger.info("AtlasLM ingestion worker started.")
     while not _shutdown:
         try:

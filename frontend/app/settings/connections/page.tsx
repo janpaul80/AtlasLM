@@ -3,25 +3,54 @@
 import { useEffect, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 import GoogleConnectorPanel from "@/app/components/connections/GoogleConnectorPanel";
+import LiveSyncPanel from "@/app/components/connections/LiveSyncPanel";
 import Header from "@/components/layout/header";
 import Footer from "@/components/layout/footer";
 import Link from "next/link";
+
+const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
+type DriveSource = { source_id: string; file_id: string; name: string; kind: string };
 
 export default function ConnectionsPage() {
   const [token, setToken] = useState<string>("");
   const [workspaceId, setWorkspaceId] = useState<string>("");
   const [loading, setLoading] = useState(true);
+  const [driveSources, setDriveSources] = useState<DriveSource[]>([]);
 
   useEffect(() => {
     async function loadSession() {
       try {
         const supabase = supabaseBrowser();
         const { data: { session } } = await supabase.auth.getSession();
-        if (session?.access_token) {
-          setToken(session.access_token);
+        const tok = session?.access_token ?? "";
+        if (tok) setToken(tok);
+        const wsId = typeof window !== "undefined" ? localStorage.getItem("selectedWorkspaceId") || "" : "";
+        setWorkspaceId(wsId);
+
+        // Fetch Drive-imported documents so LiveSyncPanel can list them
+        if (wsId && tok) {
+          try {
+            const res = await fetch(`${API}/api/v1/workspaces/${wsId}/documents`, {
+              headers: { Authorization: `Bearer ${tok}` },
+            });
+            if (res.ok) {
+              const docs: any[] = await res.json();
+              setDriveSources(
+                docs
+                  .filter((d) => d.origin === "google_drive")
+                  .map((d) => ({
+                    source_id: d.id,
+                    file_id: d.external_url?.replace("google-drive://", "") ?? "",
+                    name: d.filename,
+                    kind: d.file_type,
+                  }))
+              );
+            }
+          } catch {
+            // non-fatal: LiveSyncPanel just shows empty list
+          }
         }
-        const savedWorkspaceId = typeof window !== "undefined" ? localStorage.getItem("selectedWorkspaceId") || "" : "";
-        setWorkspaceId(savedWorkspaceId);
       } catch (err) {
         console.error("Failed to load session:", err);
       } finally {
@@ -74,6 +103,16 @@ export default function ConnectionsPage() {
             </div>
           )}
         </div>
+
+        {workspaceId && (
+          <div className="mt-6">
+            <LiveSyncPanel
+              workspaceId={workspaceId}
+              token={token}
+              sources={driveSources}
+            />
+          </div>
+        )}
       </main>
 
       <Footer />

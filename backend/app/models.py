@@ -237,5 +237,22 @@ class WorkspaceConnection(Base):
     updated_at        = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+class DriveWatchChannel(Base):
+    __tablename__ = "drive_watch_channels"
+
+    id            = Column(String, primary_key=True, default=lambda: "wch_" + uuid.uuid4().hex[:16])
+    workspace_id  = Column(String, nullable=False, index=True)
+    source_id     = Column(String, nullable=False, index=True)
+    file_id       = Column(String, nullable=False)
+    channel_id    = Column(String, nullable=False, unique=True, index=True)
+    resource_id   = Column(String, nullable=False)
+    channel_token = Column(String, nullable=False)
+    expiration    = Column(Float, nullable=True)
+    last_synced   = Column(Float, nullable=True)
+    status        = Column(String, nullable=False, default="active")
+    created_at    = Column(DateTime(timezone=True), server_default=func.now())
+
+
+
 
 

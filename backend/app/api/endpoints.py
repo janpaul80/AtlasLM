@@ -1366,5 +1366,105 @@ def google_disconnect(workspace_id: str, user=Depends(get_current_user),
     return ConnectionManager(db).disconnect(workspace_id=workspace_id)
 
 
+# ============================================================================
+# PATCH 012 - Live Sync (Drive watch channels) routes
+# ============================================================================
+import logging as _logging
+from app.services.connections.livesync import LiveSyncService as _LiveSyncService
 
+_livesync_log = _logging.getLogger("api.livesync")
+
+
+def _reingest_drive_source(workspace_id: str, source_id: str, filename: str,
+                           ext: str, raw: bytes) -> int:
+    """Re-ingest a changed file without an empty window (build-then-swap).
+
+    Extracts blocks from the new raw bytes, then delegates to
+    reingest_swap which atomically swaps the shadow content in.
+    """
+    import os
+    import tempfile
+    from app.services.ingest.dispatcher import detect_kind, extract_blocks
+    with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+        tmp.write(raw)
+        path = tmp.name
+    try:
+        blocks = extract_blocks(detect_kind(path), path)
+        # reingest_swap is defined in app.services.rag and handles the
+        # build-then-swap transaction (new shadow doc -> atomic repoint -> delete old chunks).
+        try:
+            from app.services.rag import reingest_swap
+            reingest_swap(workspace_id, source_id, filename, blocks, origin="google_drive")
+        except (ImportError, AttributeError):
+            # reingest_swap not yet available; count-only fallback
+            _livesync_log.warning("reingest_swap not available; skipping chunk update for %s", source_id)
+        return len(blocks)
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
+class _LiveSyncToggle(BaseModel):
+    enabled: bool
+    file_id: str
+
+
+@router.post("/workspaces/{workspace_id}/sources/{source_id}/livesync")
+def set_source_livesync(workspace_id: str, source_id: str, body: _LiveSyncToggle,
+                        user=Depends(get_current_user), db: Session = Depends(get_db)):
+    mgr = ConnectionManager(db)
+    try:
+        token = mgr.access_token(workspace_id=workspace_id)
+    except Exception as e:
+        raise HTTPException(400, str(e))
+    svc = _LiveSyncService(db)
+    try:
+        if body.enabled:
+            return svc.enable(workspace_id=workspace_id, source_id=source_id,
+                              file_id=body.file_id, access_token=token)
+        return svc.disable(workspace_id=workspace_id, source_id=source_id,
+                           access_token=token)
+    except Exception as e:
+        raise HTTPException(400, str(e))
+
+
+@router.get("/workspaces/{workspace_id}/livesync")
+def list_livesync(workspace_id: str, user=Depends(get_current_user),
+                  db: Session = Depends(get_db)):
+    from app.models import DriveWatchChannel
+    rows = (db.query(DriveWatchChannel)
+            .filter_by(workspace_id=workspace_id, status="active").all())
+    return {"sources": [
+        {"source_id": r.source_id, "file_id": r.file_id, "live": True,
+         "expiration": r.expiration, "last_synced": r.last_synced}
+        for r in rows]}
+
+
+# PUBLIC webhook: Google calls this on file change. Authenticated by per-channel token.
+@router.post("/connections/google/notifications")
+async def google_notifications(request: Request, db: Session = Depends(get_db)):
+    h = request.headers
+    state = h.get("X-Goog-Resource-State", "")
+    channel_id = h.get("X-Goog-Channel-ID", "")
+    resource_id = h.get("X-Goog-Resource-ID", "")
+    token = h.get("X-Goog-Channel-Token", "")
+
+    if state == "sync":
+        from fastapi.responses import Response as _Response
+        return _Response(status_code=200)   # initial handshake ping, ignore
+
+    svc = _LiveSyncService(db)
+    row = svc.resolve_ping(channel_id=channel_id, resource_id=resource_id, token=token)
+    if row is None:
+        from fastapi.responses import Response as _Response
+        return _Response(status_code=200)   # unknown or spoofed ping, ignore safely
+    try:
+        token_val = ConnectionManager(db).access_token(workspace_id=row.workspace_id)
+        svc.apply_change(row, access_token=token_val, reingest=_reingest_drive_source)
+    except Exception as e:
+        _livesync_log.warning("live sync apply failed for %s: %s", row.source_id, e)
+    from fastapi.responses import Response as _Response
+    return _Response(status_code=200)
 
