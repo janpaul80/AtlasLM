@@ -88,7 +88,7 @@ export default function ForgotPasswordPage() {
             disabled={loading}
             className="w-full bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-500 hover:to-red-500 text-white font-bold py-3.5 rounded-lg text-xs tracking-wider uppercase transition-all duration-300 shadow-[0_0_15px_rgba(234,88,12,0.3)] disabled:opacity-50 disabled:cursor-not-allowed mt-2"
           >
-            {loading ? "Sending..." : "Send Reset Email"}
+            {loading? "Sending...": "Send Reset Email"}
           </button>
         </form>
 

@@ -27,7 +27,7 @@ export default function AddSourceModal({
 
   function cleanErrorMessage(error: any): string {
     const msg = error?.message || "";
-    if (msg.includes(" -> ") || msg.includes(" : ") || msg.includes("status:")) {
+    if (msg.includes(" -> ") || msg.includes(": ") || msg.includes("status:")) {
       try {
         const jsonMatch = msg.match(/(\{.*\})/);
         if (jsonMatch) {
@@ -152,7 +152,7 @@ export default function AddSourceModal({
             style={{ display: "none" }}
           />
 
-          {active === null ? (
+          {active === null? (
             <>
               <h2>Add a source to AtlasLM</h2>
               <p className="sub">Sources let AtlasLM ground every answer in your own material.</p>
@@ -308,7 +308,7 @@ export default function AddSourceModal({
                 </div>
               </div>
             </>
-          ) : (
+          ): (
             <div className="flex flex-col">
               <button
                 className="text-orange-500 hover:text-orange-400 text-xs font-bold mb-4 flex items-center gap-1 cursor-pointer self-start"
@@ -334,11 +334,11 @@ export default function AddSourceModal({
                       disabled={busy}
                     />
                     <button
-                      disabled={busy || !url.trim()}
+                      disabled={busy ||!url.trim()}
                       onClick={handleWebsiteSubmit}
                       className="w-full bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white font-bold py-3 rounded-lg text-xs tracking-wider uppercase transition-colors"
                     >
-                      {busy ? "Ingesting..." : "Ingest Web Page"}
+                      {busy? "Ingesting...": "Ingest Web Page"}
                     </button>
                   </div>
                 </>
@@ -358,11 +358,11 @@ export default function AddSourceModal({
                       disabled={busy}
                     />
                     <button
-                      disabled={busy || !url.trim()}
+                      disabled={busy ||!url.trim()}
                       onClick={handleYoutubeSubmit}
                       className="w-full bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white font-bold py-3 rounded-lg text-xs tracking-wider uppercase transition-colors"
                     >
-                      {busy ? "Transcribing..." : "Transcribe video"}
+                      {busy? "Transcribing...": "Transcribe video"}
                     </button>
                   </div>
                 </>
@@ -390,11 +390,11 @@ export default function AddSourceModal({
                       disabled={busy}
                     />
                     <button
-                      disabled={busy || !pasteContent.trim()}
+                      disabled={busy ||!pasteContent.trim()}
                       onClick={handlePasteSubmit}
                       className="w-full bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white font-bold py-3 rounded-lg text-xs tracking-wider uppercase transition-colors"
                     >
-                      {busy ? "Ingesting..." : "Ingest text"}
+                      {busy? "Ingesting...": "Ingest text"}
                     </button>
                   </div>
                 </>

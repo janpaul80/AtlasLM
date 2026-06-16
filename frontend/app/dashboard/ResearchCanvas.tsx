@@ -97,17 +97,17 @@ export default function ResearchCanvas({
       apiClient.get<SynthesisNode[]>(`/api/v1/workspaces/${workspaceId}/synthesis`),
     ])
       .then(([edgeRows, posRows, synthesisRows]) => {
-        setEdges(edgeRows ?? []);
-        setSynthesisNodes(synthesisRows ?? []);
+        setEdges(edgeRows?? []);
+        setSynthesisNodes(synthesisRows?? []);
         const map: Record<string, { x: number; y: number }> = {};
         
         // Match positions
-        (posRows ?? []).forEach((p) => {
+        (posRows?? []).forEach((p) => {
           map[p.document_id] = { x: p.x_pos, y: p.y_pos };
         });
 
         // Set positions for synthesis nodes directly from their x_pos, y_pos
-        (synthesisRows ?? []).forEach((n) => {
+        (synthesisRows?? []).forEach((n) => {
           map[n.id] = { x: n.x_pos, y: n.y_pos };
         });
 
@@ -152,7 +152,7 @@ export default function ResearchCanvas({
         setSynthesisNodes((prev) =>
           prev.map((sn) =>
             sn.id === toId
-              ? { ...sn, input_document_ids: [...sn.input_document_ids, fromId] }
+              ? {...sn, input_document_ids: [...sn.input_document_ids, fromId] }
               : sn
           )
         );
@@ -180,7 +180,7 @@ export default function ResearchCanvas({
   const removeEdge = useCallback(async (edgeId: string) => {
     try {
       await apiClient.del(`/api/v1/workspaces/${workspaceId}/graph/${edgeId}`);
-      setEdges((prev) => prev.filter((e) => e.id !== edgeId));
+      setEdges((prev) => prev.filter((e) => e.id!== edgeId));
     } catch (err) {
       console.error("Failed to delete connection:", err);
     }
@@ -198,12 +198,12 @@ export default function ResearchCanvas({
     }
 
     setPositions((prev) => {
-      const nextPositions = { ...prev, [nodeId]: { x, y } };
+      const nextPositions = {...prev, [nodeId]: { x, y } };
       
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => {
         const docPositions = Object.entries(nextPositions).filter(([id]) => {
-          return !synthesisNodes.some((sn) => sn.id === id);
+          return!synthesisNodes.some((sn) => sn.id === id);
         });
         const payload = docPositions.map(([document_id, p]) => ({
           document_id,
@@ -224,11 +224,11 @@ export default function ResearchCanvas({
     if (!nodePos) return { x: 0, y: 0 };
     
     const nodeEl = document.getElementById(`node-${nodeId}`);
-    const height = nodeEl ? nodeEl.offsetHeight : 150;
-    const width = nodeEl ? nodeEl.offsetWidth : 218;
+    const height = nodeEl? nodeEl.offsetHeight: 150;
+    const width = nodeEl? nodeEl.offsetWidth: 218;
 
     return {
-      x: side === "right" ? nodePos.x + width : nodePos.x,
+      x: side === "right"? nodePos.x + width: nodePos.x,
       y: nodePos.y + height / 2,
     };
   }, [positions]);
@@ -315,12 +315,12 @@ export default function ResearchCanvas({
   };
 
   const handlePortPointerMove = (e: React.PointerEvent) => {
-    if (!activeLink || !canvasRef.current) return;
+    if (!activeLink ||!canvasRef.current) return;
     const cr = canvasRef.current.getBoundingClientRect();
     const x = e.clientX - cr.left;
     const y = e.clientY - cr.top;
 
-    setActiveLink((prev) => prev ? { ...prev, cursorX: x, cursorY: y } : null);
+    setActiveLink((prev) => prev? {...prev, cursorX: x, cursorY: y }: null);
 
     // Hit test target ports
     const target = document.elementFromPoint(e.clientX, e.clientY);
@@ -328,9 +328,9 @@ export default function ResearchCanvas({
     
     if (portEl) {
       const nodeId = portEl.getAttribute("data-node-id");
-      const side = portEl.classList.contains("right") ? "right" : "left";
+      const side = portEl.classList.contains("right")? "right": "left";
       
-      if (nodeId && nodeId !== activeLink.fromNodeId) {
+      if (nodeId && nodeId!== activeLink.fromNodeId) {
         setHoveredPort({ nodeId, side: side as "left" | "right" });
         return;
       }
@@ -341,7 +341,7 @@ export default function ResearchCanvas({
   const handlePortPointerUp = (e: React.PointerEvent) => {
     if (!activeLink) return;
     
-    if (hoveredPort && hoveredPort.nodeId !== activeLink.fromNodeId) {
+    if (hoveredPort && hoveredPort.nodeId!== activeLink.fromNodeId) {
       // Connect ports: from side and to side should ideally be different
       let fromId = activeLink.fromNodeId;
       let toId = hoveredPort.nodeId;
@@ -381,7 +381,7 @@ export default function ResearchCanvas({
     } else if (t === "youtube") {
       return (
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M22.5 7.5s-.2-1.6-.9-2.3c-.9-.9-1.9-.9-2.4-1C16.1 4 12 4 12 4s-4.1 0-7.2.2c-.5.1-1.5.1-2.4 1-.7.7-.9 2.3-.9 2.3S1.3 9.4 1.3 11.3v1.4c0 1.9.2 3.8.2 3.8s.2 1.6.9 2.3c.9.9 2 .9 2.6 1 1.9.2 7 .2 7 .2s4.1 0 7.2-.2c.5-.1 1.5-.1 2.4-1 .7-.7.9-2.3.9-2.3s.2-1.9.2-3.8v-1.4c0-1.9-.2-3.8-.2-3.8z" />
+          <path d="M22.5 7.5s-.2-1.6-.9-2.3c-.9-.9-1.9-.9-2.4-1C16.1 4 12 4 12 4s-4.1 0-7.2.2c-.5.1-1.5.1-2.4 1-.7.7-.9 2.3-.9 2.3S1.3 9.4 1.3 11.3v1.4c0 1.9.2 3.8.2 3.8s.2 1.6.9 2.3c.9.9 2.9 2.6 1 1.9.2 7.2 7.2s4.1 0 7.2-.2c.5-.1 1.5-.1 2.4-1.7-.7.9-2.3.9-2.3s.2-1.9.2-3.8v-1.4c0-1.9-.2-3.8-.2-3.8z" />
           <path d="M9.8 8.8v6.4l6-3.2z" fill="#ef4444" stroke="none" />
         </svg>
       );
@@ -429,7 +429,7 @@ export default function ResearchCanvas({
       <div
         key={doc.id}
         id={`node-${doc.id}`}
-        className={`node ${doc.status === "processing" ? "ghost" : ""}`}
+        className={`node ${doc.status === "processing"? "ghost": ""}`}
         style={{ left: pos.x, top: pos.y }}
         onPointerDown={(e) => handleNodePointerDown(doc.id, e)}
         onPointerMove={handleNodePointerMove}
@@ -438,7 +438,7 @@ export default function ResearchCanvas({
       >
         {/* Left Input Port */}
         <span
-          className={`port left ${isLeftLit ? "lit" : ""} ${isLeftHoverTarget ? "drag-target" : ""}`}
+          className={`port left ${isLeftLit? "lit": ""} ${isLeftHoverTarget? "drag-target": ""}`}
           data-node-id={doc.id}
           onPointerDown={(e) => handlePortPointerDown(doc.id, "left", e)}
           onPointerMove={handlePortPointerMove}
@@ -474,15 +474,15 @@ export default function ResearchCanvas({
           </div>
           
           <div className="node-tags">
-            <span className={`tag ${doc.status === "ready" ? "green" : doc.status === "failed" ? "red" : "amber"}`}>
-              {doc.status === "ready" ? "Grounded" : statusText}
+            <span className={`tag ${doc.status === "ready"? "green": doc.status === "failed"? "red": "amber"}`}>
+              {doc.status === "ready"? "Grounded": statusText}
             </span>
           </div>
         </div>
 
         {/* Right Output Port */}
         <span
-          className={`port right ${isRightLit ? "lit" : ""} ${isRightHoverTarget ? "drag-target" : ""}`}
+          className={`port right ${isRightLit? "lit": ""} ${isRightHoverTarget? "drag-target": ""}`}
           data-node-id={doc.id}
           onPointerDown={(e) => handlePortPointerDown(doc.id, "right", e)}
           onPointerMove={handlePortPointerMove}
@@ -511,7 +511,7 @@ export default function ResearchCanvas({
       >
         {/* Left Input Port */}
         <span
-          className={`port left ${isLeftLit ? "lit" : ""} ${isLeftHoverTarget ? "drag-target" : ""}`}
+          className={`port left ${isLeftLit? "lit": ""} ${isLeftHoverTarget? "drag-target": ""}`}
           data-node-id={node.id}
           onPointerDown={(e) => handlePortPointerDown(node.id, "left", e)}
           onPointerMove={handlePortPointerMove}
@@ -527,7 +527,7 @@ export default function ResearchCanvas({
             onChange={(e) => {
               const newTitle = e.target.value;
               setSynthesisNodes((prev) =>
-                prev.map((sn) => (sn.id === node.id ? { ...sn, title: newTitle } : sn))
+                prev.map((sn) => (sn.id === node.id? {...sn, title: newTitle }: sn))
               );
               if (saveTimer.current) clearTimeout(saveTimer.current);
               saveTimer.current = setTimeout(() => {
@@ -542,7 +542,7 @@ export default function ResearchCanvas({
             onClick={async () => {
               try {
                 await apiClient.del(`/api/v1/workspaces/${workspaceId}/synthesis/${node.id}`);
-                setSynthesisNodes((prev) => prev.filter((sn) => sn.id !== node.id));
+                setSynthesisNodes((prev) => prev.filter((sn) => sn.id!== node.id));
               } catch (err) {
                 console.error("Failed to delete synthesis node:", err);
               }
@@ -638,7 +638,7 @@ export default function ResearchCanvas({
                           sn.id === node.id
                             ? {
                                 ...sn,
-                                input_document_ids: sn.input_document_ids.filter((id) => id !== docId),
+                                input_document_ids: sn.input_document_ids.filter((id) => id!== docId),
                               }
                             : sn
                         )
@@ -672,7 +672,7 @@ export default function ResearchCanvas({
 
       {/* Top Left Title */}
       <div className="canvas-title">
-        <h1>{documents && documents.length > 0 ? "Corpus Mapping Canvas" : "Research Dashboard"}</h1>
+        <h1>{documents && documents.length > 0? "Corpus Mapping Canvas": "Research Dashboard"}</h1>
         <p>AtlasLM Notebook · {documents?.length || 0} sources · Live updates</p>
       </div>
 
@@ -741,7 +741,7 @@ export default function ResearchCanvas({
                 {barHeights.map((h, idx) => (
                   <div
                     key={idx}
-                    className={`bar ${idx > 24 ? "hot" : idx < 6 ? "dim" : ""}`}
+                    className={`bar ${idx > 24? "hot": idx < 6? "dim": ""}`}
                     style={{ height: `${h}%` }}
                   />
                 ))}
@@ -767,7 +767,7 @@ export default function ResearchCanvas({
           </div>
 
           {/* Completed Deliverables List */}
-          <div className={`task-group ${tasksOpen.outputs ? "open" : ""}`} onClick={() => setTasksOpen(prev => ({ ...prev, outputs: !prev.outputs }))}>
+          <div className={`task-group ${tasksOpen.outputs? "open": ""}`} onClick={() => setTasksOpen(prev => ({...prev, outputs:!prev.outputs }))}>
             <div className="tg-text">
               <h4>Grounded Artifacts</h4>
               <p>{studioOutputs?.length || 0} deliverables generated</p>
@@ -794,7 +794,7 @@ export default function ResearchCanvas({
           )}
 
           {/* In Progress tasks */}
-          <div className={`task-group ${tasksOpen.progress ? "open" : ""}`} onClick={() => setTasksOpen(prev => ({ ...prev, progress: !prev.progress }))}>
+          <div className={`task-group ${tasksOpen.progress? "open": ""}`} onClick={() => setTasksOpen(prev => ({...prev, progress:!prev.progress }))}>
             <div className="tg-text">
               <h4>System Threads</h4>
               <p>Pipeline is active</p>

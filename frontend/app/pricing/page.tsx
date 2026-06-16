@@ -127,8 +127,8 @@ export default function PricingPage() {
                 <ul className="flex flex-col gap-4 mb-8">
                   {tier.features.map((feat, fIdx) => (
                     <li key={fIdx} className="flex items-start gap-3 text-xs leading-normal">
-                      {feat.active ? <CheckIcon /> : <CrossIcon />}
-                      <span className={feat.active ? "text-zinc-300" : "text-zinc-650"}>{feat.text}</span>
+                      {feat.active? <CheckIcon />: <CrossIcon />}
+                      <span className={feat.active? "text-zinc-300": "text-zinc-650"}>{feat.text}</span>
                     </li>
                   ))}
                 </ul>

@@ -25,7 +25,7 @@ export default function ContactPage() {
     const num1 = Math.floor(Math.random() * 9) + 2; // 2 to 10
     const num2 = Math.floor(Math.random() * 9) + 2; // 2 to 10
     setCaptcha({ num1, num2, sum: num1 + num2 });
-    setFormData((prev) => ({ ...prev, captchaAnswer: "" }));
+    setFormData((prev) => ({...prev, captchaAnswer: "" }));
   };
 
   useEffect(() => {
@@ -34,7 +34,7 @@ export default function ContactPage() {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({...prev, [name]: value }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -42,7 +42,7 @@ export default function ContactPage() {
     setSubmitStatus({ type: "loading", message: "Sending your message..." });
 
     const answer = parseInt(formData.captchaAnswer, 10);
-    if (isNaN(answer) || answer !== captcha.sum) {
+    if (isNaN(answer) || answer!== captcha.sum) {
       setSubmitStatus({
         type: "error",
         message: "Incorrect Captcha answer. Please try again.",
@@ -111,7 +111,7 @@ export default function ContactPage() {
           className="rounded-2xl glass-panel p-8 shadow-xl shadow-black/40 border border-zinc-900 bg-zinc-950/40 relative"
         >
           {/* Status Message Banner */}
-          {submitStatus.type !== "idle" && (
+          {submitStatus.type!== "idle" && (
             <div
               className={`mb-6 p-4 rounded-lg text-xs font-semibold border ${
                 submitStatus.type === "success"
@@ -207,7 +207,7 @@ export default function ContactPage() {
               disabled={submitStatus.type === "loading"}
               className="w-full bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-500 hover:to-red-500 text-white font-bold py-3.5 rounded-lg text-xs tracking-wider uppercase transition-all duration-300 shadow-[0_0_15px_rgba(234,88,12,0.3)] disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {submitStatus.type === "loading" ? "Submitting..." : "Send Message"}
+              {submitStatus.type === "loading"? "Submitting...": "Send Message"}
             </button>
           </form>
         </motion.div>
@@ -225,7 +225,7 @@ export default function ContactPage() {
           <div className="flex items-center gap-3">
             <div className="p-2.5 bg-green-950/20 border border-green-500/20 rounded-xl text-green-400">
               <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M17.523 15.3c-.551 0-1.002-.445-1.002-.996 0-.552.451-1 .1-1 .552 0 1 .448 1 1 0 .551-.448.996-.998.996zm-11.046 0c-.551 0-1-.445-1-.996 0-.552.449-1 .998-1 .552 0 1 .448 1 1 0 .551-.448.996-.998.996zm11.417-6.071l2.003-3.472a.498.498 0 0 0-.183-.681.498.498 0 0 0-.681.183l-2.018 3.498a10.937 10.937 0 0 0-7.036 0L5.964 5.257a.496.496 0 0 0-.68-.183.498.498 0 0 0-.183.681l2.002 3.472C3.216 11.237 1 14.364 1 18h22c0-3.636-2.216-6.763-6.096-8.771z" />
+                <path d="M17.523 15.3c-.551 0-1.002-.445-1.002-.996 0-.552.451-1.1-1.552 0 1.448 1 1 0.551-.448.996-.998.996zm-11.046 0c-.551 0-1-.445-1-.996 0-.552.449-1.998-1.552 0 1.448 1 1 0.551-.448.996-.998.996zm11.417-6.071l2.003-3.472a.498.498 0 0 0-.183-.681.498.498 0 0 0-.681.183l-2.018 3.498a10.937 10.937 0 0 0-7.036 0L5.964 5.257a.496.496 0 0 0-.68-.183.498.498 0 0 0-.183.681l2.002 3.472C3.216 11.237 1 14.364 1 18h22c0-3.636-2.216-6.763-6.096-8.771z" />
               </svg>
             </div>
             <div className="text-left">

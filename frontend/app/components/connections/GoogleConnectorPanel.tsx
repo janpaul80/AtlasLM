@@ -72,7 +72,7 @@ export default function GoogleConnectorPanel({ workspaceId, token }: Props) {
             )}
           </div>
           <div className="gc-sub">
-            {status.connected ? status.account_email : "Bring Docs, Sheets, Slides, and PDFs from Drive."}
+            {status.connected? status.account_email: "Bring Docs, Sheets, Slides, and PDFs from Drive."}
           </div>
         </div>
         <span className="gc-lock" title="Tokens are encrypted at rest">{lockIcon} Encrypted</span>
@@ -80,7 +80,7 @@ export default function GoogleConnectorPanel({ workspaceId, token }: Props) {
 
       {error && <div className="gc-error" role="alert">{error}</div>}
 
-      {!status.connected ? (
+      {!status.connected? (
         <div className="gc-connect">
           <p className="gc-blurb">
             You choose exactly which files to bring in. AtlasLM never browses your whole Drive.
@@ -95,11 +95,11 @@ export default function GoogleConnectorPanel({ workspaceId, token }: Props) {
             <li>Revoke any time</li>
           </ul>
         </div>
-      ) : (
+      ): (
         <div className="gc-manage">
           <div className="gc-actions">
             <button className="gc-primary" onClick={onPickAndImport} disabled={busy}>
-              {busy ? "Working..." : "Add files from Drive"}
+              {busy? "Working...": "Add files from Drive"}
             </button>
             <button className="gc-danger" onClick={onDisconnect} disabled={busy}>
               Disconnect
@@ -114,11 +114,11 @@ export default function GoogleConnectorPanel({ workspaceId, token }: Props) {
               </div>
               <ul className="gc-files">
                 {result.imported.map((f) => (
-                  <li key={f.id} className={f.ok ? "ok" : "bad"}>
+                  <li key={f.id} className={f.ok? "ok": "bad"}>
                     <span className="gc-file-name">{f.name}</span>
                     <span className="gc-kind">{f.kind}</span>
                     <span className="gc-state">
-                      {f.ok ? `synced (${f.blocks} blocks)` : (f.error || "failed")}
+                      {f.ok? `synced (${f.blocks} blocks)`: (f.error || "failed")}
                     </span>
                   </li>
                 ))}

@@ -15,10 +15,10 @@ export default function PublicListen(
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
   const [pos, setPos] = useState(0);
-  const lines = data.transcript ?? [];
-  const dur = data.duration ?? 0;
+  const lines = data.transcript?? [];
+  const dur = data.duration?? 0;
   const active = lines.reduce(
-    (acc: number, l: any, i: number) => (pos >= (l.start ?? 0) ? i : acc), 0);
+    (acc: number, l: any, i: number) => (pos >= (l.start?? 0)? i: acc), 0);
 
   function toggle() {
     const el = audioRef.current;
@@ -43,19 +43,19 @@ export default function PublicListen(
             onEnded={() => setPlaying(false)} preload="metadata" />
           <div className="ao-progress">
             <div className="ao-progress-fill"
-              style={{ width: `${dur ? (pos / dur) * 100 : 0}%` }} />
+              style={{ width: `${dur? (pos / dur) * 100: 0}%` }} />
           </div>
           <div className="ao-times"><span>{fmt(pos)}</span><span>{fmt(dur)}</span></div>
           <div className="ao-controls">
             <button type="button" className="ao-play" onClick={toggle}>
-              {playing ? "Pause" : "Play"}
+              {playing? "Pause": "Play"}
             </button>
           </div>
         </div>
 
         <div className="ao-transcript" style={{ marginTop: 16 }}>
           {lines.map((l: any, i: number) => (
-            <div key={i} className={`ao-line ${i === active && playing ? "is-active" : ""}`}>
+            <div key={i} className={`ao-line ${i === active && playing? "is-active": ""}`}>
               <span className={`ao-spk ao-spk-${l.speaker}`}>{l.name}</span>
               <p>{l.text}</p>
             </div>

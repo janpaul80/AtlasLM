@@ -34,10 +34,10 @@ export default function LiveSyncPanel({ workspaceId, token, sources }: Props) {
 
   async function toggle(row: SourceRow) {
     setError(null);
-    const currentlyLive = !!live[row.source_id]?.live;
+    const currentlyLive =!!live[row.source_id]?.live;
     setBusy(row.source_id);
     try {
-      await setLiveSync(workspaceId, row.source_id, row.file_id, !currentlyLive, token);
+      await setLiveSync(workspaceId, row.source_id, row.file_id,!currentlyLive, token);
       await refresh();
     } catch (e: any) {
       setError(e.message || "Could not update live sync.");
@@ -58,7 +58,7 @@ export default function LiveSyncPanel({ workspaceId, token, sources }: Props) {
               : "Paused for the whole connection. Per-file switches stay set."}
           </div>
         </div>
-        <button className="ls-toggle" data-on={master} onClick={() => setMaster((m) => !m)}
+        <button className="ls-toggle" data-on={master} onClick={() => setMaster((m) =>!m)}
                 aria-pressed={master} aria-label="Toggle live sync for the connection">
           <span className="ls-knob" />
         </button>
@@ -70,9 +70,9 @@ export default function LiveSyncPanel({ workspaceId, token, sources }: Props) {
         <div className="ls-list-head">Imported from Drive ({sources.length})</div>
         {sources.map((row) => {
           const ls = live[row.source_id];
-          const on = !!ls?.live;
-          const shown = !master && on ? "Paused" : on ? "Synced" : "Not syncing";
-          const cls = !master && on ? "paused" : on ? "synced" : "off";
+          const on =!!ls?.live;
+          const shown =!master && on? "Paused": on? "Synced": "Not syncing";
+          const cls =!master && on? "paused": on? "synced": "off";
           return (
             <div className="ls-row" key={row.source_id}>
               <div className="ls-row-main">

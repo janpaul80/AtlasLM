@@ -8,7 +8,7 @@ import Header from "@/components/layout/header";
 import Footer from "@/components/layout/footer";
 import Link from "next/link";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API = process.env.NEXT_PUBLIC_API_URL?? "http://localhost:8000";
 
 type DriveSource = { source_id: string; file_id: string; name: string; kind: string };
 
@@ -23,9 +23,9 @@ export default function ConnectionsPage() {
       try {
         const supabase = supabaseBrowser();
         const { data: { session } } = await supabase.auth.getSession();
-        const tok = session?.access_token ?? "";
+        const tok = session?.access_token?? "";
         if (tok) setToken(tok);
-        const wsId = typeof window !== "undefined" ? localStorage.getItem("selectedWorkspaceId") || "" : "";
+        const wsId = typeof window!== "undefined"? localStorage.getItem("selectedWorkspaceId") || "": "";
         setWorkspaceId(wsId);
 
         // Fetch Drive-imported documents so LiveSyncPanel can list them
@@ -41,7 +41,7 @@ export default function ConnectionsPage() {
                   .filter((d) => d.origin === "google_drive")
                   .map((d) => ({
                     source_id: d.id,
-                    file_id: d.external_url?.replace("google-drive://", "") ?? "",
+                    file_id: d.external_url?.replace("google-drive://", "")?? "",
                     name: d.filename,
                     kind: d.file_type,
                   }))
@@ -95,9 +95,9 @@ export default function ConnectionsPage() {
         </div>
 
         <div className="bg-zinc-900/40 border border-zinc-900 rounded-2xl p-6 backdrop-blur-md">
-          {workspaceId ? (
+          {workspaceId? (
             <GoogleConnectorPanel workspaceId={workspaceId} token={token} />
-          ) : (
+          ): (
             <div className="text-zinc-400 text-sm py-4">
               Please select a workspace on the dashboard first.
             </div>

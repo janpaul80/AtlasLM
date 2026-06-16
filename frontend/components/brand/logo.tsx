@@ -21,7 +21,7 @@ export default function Logo({
         alt="Atlas LM"
         className="object-contain transition-transform duration-300 hover:scale-105"
         style={{ 
-          width: layout === "vertical" ? size * 1.2 : size, 
+          width: layout === "vertical"? size * 1.2: size, 
           height: "auto", 
           maxHeight: size 
         }}

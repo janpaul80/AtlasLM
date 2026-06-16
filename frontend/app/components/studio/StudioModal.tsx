@@ -73,7 +73,7 @@ export default function StudioModal({
 
           {phase === "error" && (
             <div className="py-16 text-center text-slate-400">
-              {result?.message ?? "AtlasLM Engine could not generate this output. Please retry."}
+              {result?.message?? "AtlasLM Engine could not generate this output. Please retry."}
             </div>
           )}
 
@@ -122,11 +122,11 @@ function Renderer({ type, data, citations }: { type: StudioType; data: any; cita
     return (
       <article className="space-y-4">
         <h3 className="text-lg font-semibold">{data.title}</h3>
-        {(data.sections ?? []).map((s: any, i: number) => (
+        {(data.sections?? []).map((s: any, i: number) => (
           <div key={i}>
             <h4 className="text-[13px] font-semibold uppercase tracking-wide text-slate-400 mb-1">{s.h}</h4>
             <p className="text-[14px] leading-relaxed">
-              {s.b} {(s.cites ?? []).map((c: number) => <Badge key={c} n={c} />)}
+              {s.b} {(s.cites?? []).map((c: number) => <Badge key={c} n={c} />)}
             </p>
           </div>
         ))}
@@ -142,13 +142,13 @@ function Renderer({ type, data, citations }: { type: StudioType; data: any; cita
           {data.root}
         </div>
         <div className="grid grid-cols-3 gap-3 w-full">
-          {(data.branches ?? []).map((b: any, bi: number) => {
+          {(data.branches?? []).map((b: any, bi: number) => {
             const color = colors[bi % colors.length];
             return (
               <div key={bi} className="rounded-xl border p-3" style={{ borderColor: `${color}40`, background: `${color}0D` }}>
                 <div className="text-[13px] font-semibold mb-2" style={{ color }}>{b.label}</div>
                 <ul className="space-y-1.5">
-                  {(b.kids ?? []).map((k: string, ki: number) => (
+                  {(b.kids?? []).map((k: string, ki: number) => (
                     <li key={ki} className="text-[12px] text-slate-300 flex items-center gap-1.5">
                       <span className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />
                       {k}
@@ -164,20 +164,20 @@ function Renderer({ type, data, citations }: { type: StudioType; data: any; cita
   }
 
   if (type === "flashcards") {
-    const cards = data.cards ?? [];
+    const cards = data.cards?? [];
     if (!cards.length) return <p className="text-slate-400">No cards generated.</p>;
     const c = cards[card];
     return (
       <div className="flex flex-col items-center">
         <div
-          onClick={() => setFlip((f) => !f)}
+          onClick={() => setFlip((f) =>!f)}
           className="w-full h-52 rounded-2xl border flex items-center justify-center text-center px-8 cursor-pointer select-none"
           style={{ background: PANEL, borderColor: BORDER }}
         >
-          {!flip ? (
+          {!flip? (
             <p className="text-[16px] font-medium">{c.q}</p>
-          ) : (
-            <p className="text-[15px] text-slate-200">{c.a} {c.cite != null && <Badge n={c.cite} />}</p>
+          ): (
+            <p className="text-[15px] text-slate-200">{c.a} {c.cite!= null && <Badge n={c.cite} />}</p>
           )}
         </div>
         <p className="text-[11px] text-slate-500 mt-2">Tap card to flip</p>
@@ -196,33 +196,33 @@ function Renderer({ type, data, citations }: { type: StudioType; data: any; cita
   }
 
   if (type === "quiz") {
-    const qs = data.questions ?? [];
+    const qs = data.questions?? [];
     return (
       <div className="space-y-5">
         {qs.map((q: any, qi: number) => (
           <div key={qi}>
             <p className="text-[14px] font-medium mb-2">
-              {qi + 1}. {q.q} {q.cite != null && <Badge n={q.cite} />}
+              {qi + 1}. {q.q} {q.cite!= null && <Badge n={q.cite} />}
             </p>
             <div className="space-y-1.5">
-              {(q.opts ?? []).map((o: string, oi: number) => {
+              {(q.opts?? []).map((o: string, oi: number) => {
                 const chosen = picked[qi] === oi;
-                const reveal = picked[qi] != null;
+                const reveal = picked[qi]!= null;
                 const correct = oi === q.correct;
                 return (
                   <button
                     key={oi}
                     disabled={reveal}
-                    onClick={() => setPicked((p) => ({ ...p, [qi]: oi }))}
+                    onClick={() => setPicked((p) => ({...p, [qi]: oi }))}
                     className="w-full text-left px-3 py-2 rounded-lg border text-[13px] flex items-center gap-2"
                     style={{
-                      background: reveal && correct ? "rgba(34,197,94,0.12)" : chosen ? "rgba(239,68,68,0.12)" : PANEL,
-                      borderColor: reveal && correct ? "#22C55E55" : chosen ? "#EF444455" : BORDER,
+                      background: reveal && correct? "rgba(34,197,94,0.12)": chosen? "rgba(239,68,68,0.12)": PANEL,
+                      borderColor: reveal && correct? "#22C55E55": chosen? "#EF444455": BORDER,
                     }}
                   >
                     <span className="flex-1">{o}</span>
                     {reveal && correct && <span className="text-green-400">✓</span>}
-                    {reveal && chosen && !correct && <span className="text-red-400">✕</span>}
+                    {reveal && chosen &&!correct && <span className="text-red-400">✕</span>}
                   </button>
                 );
               })}
@@ -239,17 +239,17 @@ function Renderer({ type, data, citations }: { type: StudioType; data: any; cita
         <table className="w-full text-[13px]">
           <thead>
             <tr style={{ background: PANEL }}>
-              {(data.cols ?? []).map((c: string, i: number) => (
+              {(data.cols?? []).map((c: string, i: number) => (
                 <th key={i} className="text-left px-3 py-2 font-semibold text-slate-300">{c}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {(data.rows ?? []).map((r: any[], i: number) => (
+            {(data.rows?? []).map((r: any[], i: number) => (
               <tr key={i} className="border-t" style={{ borderColor: BORDER }}>
                 {r.map((cell, ci) => (
                   <td key={ci} className="px-3 py-2 text-slate-300">
-                    {ci === r.length - 1 ? <Badge n={Number(cell)} /> : String(cell)}
+                    {ci === r.length - 1? <Badge n={Number(cell)} />: String(cell)}
                   </td>
                 ))}
               </tr>
@@ -261,7 +261,7 @@ function Renderer({ type, data, citations }: { type: StudioType; data: any; cita
   }
 
   if (type === "slides") {
-    const slides = data.slides ?? [];
+    const slides = data.slides?? [];
     if (!slides.length) return <p className="text-slate-400">No slides generated.</p>;
     return (
       <div>
@@ -281,7 +281,7 @@ function Renderer({ type, data, citations }: { type: StudioType; data: any; cita
               key={i}
               onClick={() => setSlide(i)}
               className="h-1.5 rounded-full transition-all"
-              style={{ width: i === slide ? 22 : 7, background: i === slide ? ORANGE : "#444" }}
+              style={{ width: i === slide? 22: 7, background: i === slide? ORANGE: "#444" }}
             />
           ))}
         </div>
@@ -290,18 +290,18 @@ function Renderer({ type, data, citations }: { type: StudioType; data: any; cita
   }
 
   if (type === "audio") {
-    const script = data.script ?? [];
+    const script = data.script?? [];
     return (
       <div>
         <div className="text-center py-4">
           <button
-            onClick={() => setPlaying((p) => !p)}
+            onClick={() => setPlaying((p) =>!p)}
             className="h-16 w-16 rounded-full flex items-center justify-center text-white mx-auto"
             style={{ background: "#EC4899" }}
           >
-            {playing ? "❚❚" : "▶"}
+            {playing? "❚❚": "▶"}
           </button>
-          <p className="font-medium text-[15px] mt-3">{data.title ?? "Audio Overview"}</p>
+          <p className="font-medium text-[15px] mt-3">{data.title?? "Audio Overview"}</p>
           <p className="text-[12px] text-slate-500">Podcast-style · two AI hosts</p>
         </div>
         <div className="space-y-2 mt-2 max-h-56 overflow-y-auto">

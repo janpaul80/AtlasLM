@@ -9,7 +9,7 @@ import Footer from "@/components/layout/footer";
 import Link from "next/link";
 
 const DEFAULT_SEAT_LIMIT = parseInt(
-  process.env.NEXT_PUBLIC_DEFAULT_SEAT_LIMIT ?? "5",
+  process.env.NEXT_PUBLIC_DEFAULT_SEAT_LIMIT?? "5",
   10
 );
 
@@ -25,10 +25,10 @@ export default function WorkspaceSettingsPage() {
         const {
           data: { session },
         } = await supabase.auth.getSession();
-        const tok = session?.access_token ?? "";
+        const tok = session?.access_token?? "";
         if (tok) setToken(tok);
         const wsId =
-          typeof window !== "undefined"
+          typeof window!== "undefined"
             ? localStorage.getItem("selectedWorkspaceId") || ""
             : "";
         setWorkspaceId(wsId);
@@ -90,12 +90,12 @@ export default function WorkspaceSettingsPage() {
           </p>
         </div>
 
-        {workspaceId ? (
+        {workspaceId? (
           <TeamPanel
             workspaceId={workspaceId}
             seatLimit={DEFAULT_SEAT_LIMIT}
           />
-        ) : (
+        ): (
           <div className="bg-zinc-900/40 border border-zinc-900 rounded-2xl p-6 backdrop-blur-md">
             <div className="text-zinc-400 text-sm py-4">
               Please select a workspace on the dashboard first.
