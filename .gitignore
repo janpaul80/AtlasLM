@@ -18,6 +18,8 @@ secrets*
 credentials*
 credentials.json
 api-keys.json
+*api.txt
+* api.txt
 
 # 2. Node.js (Next.js Frontend)
 node_modules/
