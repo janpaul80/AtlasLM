@@ -38,7 +38,7 @@ _research = DeepResearchService()
 
 router = APIRouter()
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# -- Helpers ------------------------------------------------------------------
 
 def current_user_id(request: Request) -> str:
     """Extract the authenticated user's sub claim from the request state."""
@@ -68,7 +68,7 @@ def _get_owned_workspace(workspace_id: uuid.UUID, user_id: str, db: Session) -> 
     return ws
 
 
-# ── Workspace Endpoints ───────────────────────────────────────────────────────
+# -- Workspace Endpoints -------------------------------------------------------
 
 @router.get("/workspaces", response_model=List[WorkspaceOut])
 def list_workspaces(request: Request, db: Session = Depends(get_db)):
@@ -110,7 +110,7 @@ def delete_workspace(
     return
 
 
-# ── Document & Ingestion Endpoints ───────────────────────────────────────────
+# -- Document & Ingestion Endpoints -------------------------------------------
 
 @router.get("/workspaces/{workspace_id}/documents", response_model=List[DocumentOut])
 def list_documents(
@@ -404,7 +404,7 @@ def delete_document(
     return
 
 
-# ── Chat Session Endpoints ────────────────────────────────────────────────────
+# -- Chat Session Endpoints ----------------------------------------------------
 
 @router.get("/workspaces/{workspace_id}/sessions", response_model=List[ChatSessionOut])
 def list_sessions(
@@ -465,7 +465,7 @@ def get_session_details(
     return session
 
 
-# ── Streaming RAG Chat Endpoint ───────────────────────────────────────────────
+# -- Streaming RAG Chat Endpoint -----------------------------------------------
 
 @router.post("/sessions/{session_id}/chat/stream")
 async def chat_stream(
@@ -500,7 +500,7 @@ async def chat_stream(
     )
 
 
-# ── Contact / Captcha ─────────────────────────────────────────────────────────
+# -- Contact / Captcha ---------------------------------------------------------
 
 @router.post("/contact")
 async def verify_contact(
@@ -519,7 +519,7 @@ async def verify_contact(
     return {"status": "success", "message": "Thank you! Your message has been received."}
 
 
-# ── Settings ──────────────────────────────────────────────────────────────────
+# -- Settings ------------------------------------------------------------------
 
 @router.get("/settings/providers")
 def get_available_providers():
@@ -540,7 +540,7 @@ def get_available_providers():
     }
 
 
-# ── AtlasLM Studio Endpoints ────────────────────────────────────────────────
+# -- AtlasLM Studio Endpoints ------------------------------------------------
 
 @router.get("/studio/types")
 def list_studio_types():
@@ -752,7 +752,7 @@ def research_job_status(
     return job
 
 
-# ── Helper for User Profiles ──────────────────────────────────────────────────
+# -- Helper for User Profiles --------------------------------------------------
 def _get_or_create_profile(db: Session, user_id: str) -> UserProfile:
     profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
     if not profile:
@@ -763,7 +763,7 @@ def _get_or_create_profile(db: Session, user_id: str) -> UserProfile:
     return profile
 
 
-# ── YouTube Ingestion Endpoint ────────────────────────────────────────────────
+# -- YouTube Ingestion Endpoint ------------------------------------------------
 @router.post(
     "/workspaces/{workspace_id}/documents/youtube",
     response_model=DocumentOut,
@@ -836,7 +836,7 @@ async def ingest_youtube(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-# ── Workspace Graph (Canvas Connections) Endpoints ────────────────────────────
+# -- Workspace Graph (Canvas Connections) Endpoints ----------------------------
 @router.get("/workspaces/{workspace_id}/graph", response_model=list[GraphEdgeOut])
 def list_graph_edges(workspace_id: uuid.UUID, request: Request, db: Session = Depends(get_db)):
     uid = current_user_id(request)
@@ -882,7 +882,7 @@ def delete_graph_edge(workspace_id: uuid.UUID, edge_id: uuid.UUID,
     db.delete(edge); db.commit()
 
 
-# ── Canvas Node Positions Endpoints ───────────────────────────────────────────
+# -- Canvas Node Positions Endpoints -------------------------------------------
 @router.put("/workspaces/{workspace_id}/graph/positions", status_code=204)
 def save_node_positions(workspace_id: uuid.UUID, payload: list[NodePositionUpdate],
                         request: Request, db: Session = Depends(get_db)):
@@ -908,7 +908,7 @@ def get_node_positions(workspace_id: uuid.UUID, request: Request, db: Session = 
     return [{"document_id": str(r.document_id), "x_pos": r.x_pos, "y_pos": r.y_pos} for r in rows]
 
 
-# ── Onboarding Flags Endpoints ────────────────────────────────────────────────
+# -- Onboarding Flags Endpoints ------------------------------------------------
 @router.get("/me/onboarding", response_model=OnboardingFlagsOut)
 def get_onboarding_flags(request: Request, db: Session = Depends(get_db)):
     uid = current_user_id(request)
@@ -931,7 +931,7 @@ def update_onboarding_flags(payload: OnboardingFlagsUpdate,
                               marketing_opt_in=profile.marketing_opt_in)
 
 
-# ── Synthesis Endpoints ───────────────────────────────────────────────────────
+# -- Synthesis Endpoints -------------------------------------------------------
 
 @router.get("/workspaces/{workspace_id}/synthesis", response_model=list[SynthesisNodeOut])
 def list_synthesis_nodes(workspace_id: uuid.UUID, request: Request, db: Session = Depends(get_db)):
@@ -1005,7 +1005,7 @@ def remove_synthesis_input(workspace_id: uuid.UUID, node_id: uuid.UUID, document
     db.delete(link); db.commit()
 
 
-# ── Private Helpers for Synthesis ─────────────────────────────────────────────
+# -- Private Helpers for Synthesis ---------------------------------------------
 
 def _get_owned_synthesis(db: Session, ws: Workspace, node_id: uuid.UUID) -> SynthesisNode:
     node = db.query(SynthesisNode).filter_by(id=node_id, workspace_id=ws.id).first()
@@ -1468,3 +1468,117 @@ async def google_notifications(request: Request, db: Session = Depends(get_db)):
     from fastapi.responses import Response as _Response
     return _Response(status_code=200)
 
+
+# ============================================================================
+# PATCH 013 - Teams / Shared Workspaces routes
+# ============================================================================
+import logging as _teams_log_mod
+from app.services.teams import TeamService as _TeamService, InviteService as _InviteService
+from app.services.teams import InviteError as _InviteError
+
+_teams_log = _teams_log_mod.getLogger("api.teams")
+
+
+def _require_team_role(db, workspace_id: str, user_id: str):
+    """Return the caller's role or raise 403 if not a member."""
+    role = _TeamService(db).role_of(workspace_id, user_id)
+    if role is None:
+        raise HTTPException(status_code=403, detail="You are not a member of this workspace.")
+    return role
+
+
+class _InviteBody(BaseModel):
+    email: str
+    role: str = "viewer"
+
+
+class _RoleBody(BaseModel):
+    role: str
+
+
+class _AcceptBody(BaseModel):
+    token: str
+
+
+@router.get("/workspaces/{workspace_id}/members")
+def list_members(workspace_id: str, user=Depends(get_current_user),
+                 db: Session = Depends(get_db)):
+    user_id = user.get("sub", "")
+    _require_team_role(db, workspace_id, user_id)
+    svc = _TeamService(db)
+    return {
+        "members": svc.members(workspace_id),
+        "invites": _InviteService(db).pending(workspace_id),
+        "your_role": svc.role_of(workspace_id, user_id),
+    }
+
+
+@router.post("/workspaces/{workspace_id}/invites")
+def create_invite(workspace_id: str, body: _InviteBody,
+                  user=Depends(get_current_user), db: Session = Depends(get_db)):
+    user_id = user.get("sub", "")
+    actor_role = _require_team_role(db, workspace_id, user_id)
+    try:
+        result = _InviteService(db).create(
+            actor_role, workspace_id, body.email, body.role, invited_by=user_id
+        )
+    except _InviteError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+    # TODO: send invite email here. The raw token is returned ONCE.
+    # link = f"{settings.APP_URL}/invite/accept?token={result['token']}"
+    # send_invite_email(result["email"], link, workspace_id)
+    _teams_log.info("invite created for %s role=%s ws=%s",
+                    result["email"], result["role"], workspace_id)
+    return {"id": result["id"], "email": result["email"], "role": result["role"],
+            "expires_at": result["expires_at"]}  # raw token intentionally NOT returned to client
+
+
+@router.post("/invites/accept")
+def accept_invite(body: _AcceptBody, user=Depends(get_current_user),
+                  db: Session = Depends(get_db)):
+    user_id = user.get("sub", "")
+    user_email = user.get("email", "")
+    try:
+        return _InviteService(db).accept(body.token, signed_in_email=user_email, user_id=user_id)
+    except _InviteError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/workspaces/{workspace_id}/invites/{invite_id}")
+def revoke_invite(workspace_id: str, invite_id: str,
+                  user=Depends(get_current_user), db: Session = Depends(get_db)):
+    actor_role = _require_team_role(db, workspace_id, user.get("sub", ""))
+    try:
+        ok = _InviteService(db).revoke(actor_role, invite_id)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    return {"revoked": ok}
+
+
+@router.patch("/workspaces/{workspace_id}/members/{member_user_id}")
+def change_member_role(workspace_id: str, member_user_id: str, body: _RoleBody,
+                       user=Depends(get_current_user), db: Session = Depends(get_db)):
+    actor_role = _require_team_role(db, workspace_id, user.get("sub", ""))
+    try:
+        _TeamService(db).change_role(actor_role, workspace_id, member_user_id, body.role)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"user_id": member_user_id, "role": body.role}
+
+
+@router.delete("/workspaces/{workspace_id}/members/{member_user_id}")
+def remove_member(workspace_id: str, member_user_id: str,
+                  user=Depends(get_current_user), db: Session = Depends(get_db)):
+    actor_role = _require_team_role(db, workspace_id, user.get("sub", ""))
+    try:
+        _TeamService(db).remove(actor_role, workspace_id, member_user_id)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"removed": member_user_id}

@@ -115,7 +115,7 @@ class RAGQualityValidator:
                 f"Chunk #{idx+1} [Page {chunk['page_number']}] (Index: {chunk['chunk_index']}): "
                 f"Offsets {chunk['char_start']}-{chunk['char_end']} | Snippet: '{chunk['content'][:50]}...'"
             )
-        logger.info("✓ Chunking Overlap & Lineage checks PASSED.\n")
+        logger.info("? Chunking Overlap & Lineage checks PASSED.\n")
         return chunks
 
     def test_semantic_retrieval_ranking(self, chunks: List[Dict[str, Any]]):
@@ -166,7 +166,7 @@ class RAGQualityValidator:
         # Assert KLAW chunk is ranked #1
         top_chunk = ranked_results[0][0]
         assert "KLAW" in top_chunk["content"], "KLAW chunk should be retrieved as the primary relevance match."
-        logger.info("✓ Semantic Retrieval Ranking check PASSED.\n")
+        logger.info("? Semantic Retrieval Ranking check PASSED.\n")
         return ranked_results
 
     def test_hallucination_prevention_prompt(self, ranked_results):
@@ -214,7 +214,7 @@ class RAGQualityValidator:
         # Verify strict rules are present
         assert "STRICTOR RULES" in system_prompt, "System prompt must enforce strict RAG guidelines."
         assert "I could not find that information in the uploaded sources" in system_prompt, "Grounding fallback text must be present."
-        logger.info("✓ Grounding Prompt Construction check PASSED.\n")
+        logger.info("? Grounding Prompt Construction check PASSED.\n")
 
 def run_rag_validation():
     logger.info("==================================================")

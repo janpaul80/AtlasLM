@@ -253,6 +253,27 @@ class DriveWatchChannel(Base):
     created_at    = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class WorkspaceMember(Base):
+    __tablename__ = "workspace_members"
+
+    id           = Column(String, primary_key=True, default=lambda: "mem_" + uuid.uuid4().hex[:16])
+    workspace_id = Column(String, nullable=False, index=True)
+    user_id      = Column(String, nullable=False, index=True)
+    role         = Column(String, nullable=False, default="viewer")  # owner | editor | viewer
+    added_by     = Column(String, nullable=True)
+    created_at   = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class WorkspaceInvite(Base):
+    __tablename__ = "workspace_invites"
 
+    id           = Column(String, primary_key=True, default=lambda: "inv_" + uuid.uuid4().hex[:16])
+    workspace_id = Column(String, nullable=False, index=True)
+    email        = Column(String, nullable=False, index=True)
+    role         = Column(String, nullable=False, default="viewer")  # editor | viewer (never owner)
+    token_hash   = Column(String, nullable=False, unique=True, index=True)
+    invited_by   = Column(String, nullable=True)
+    status       = Column(String, nullable=False, default="pending")
+    expires_at   = Column(Float, nullable=True)
+    created_at   = Column(DateTime(timezone=True), server_default=func.now())
+    accepted_at  = Column(Float, nullable=True)

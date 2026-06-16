@@ -46,6 +46,15 @@ def run_once() -> int:
                 log.warning("renew failed for source %s: %s", row.source_id, e)
         if renewed:
             log.info("renewed %d watch channel(s)", renewed)
+
+        # Housekeeping: mark expired pending invites (Patch 013)
+        try:
+            from app.services.teams import InviteService as _InviteService
+            expired = _InviteService(db).expire_due()
+            if expired:
+                log.info("expired %d pending invite(s)", expired)
+        except Exception as e:
+            log.warning("invite expiry sweep error: %s", e)
     finally:
         db.close()
     return renewed
