@@ -1031,3 +1031,180 @@ def scoped_document_ids(db: Session, ws: Workspace, synthesis_node_id: uuid.UUID
     return ids
 
 
+# ============================================================================
+# PATCH 010 - Studio Finish: Audio Overview + Export + Share routes
+# ============================================================================
+
+import os
+from typing import List, Optional
+from pydantic import BaseModel
+from fastapi import Depends, HTTPException
+from fastapi.responses import Response, FileResponse
+
+from app.services.audio.service import AudioOverviewService
+from app.services.audio import export as audio_export
+from app.services.audio import share as audio_share
+
+class RealRetriever:
+    def retrieve(self, db, workspace_id, doc_ids=None):
+        from app.services.rag import retrieve_chunks
+        return retrieve_chunks(
+            notebook_id=str(workspace_id),
+            query="key concepts, central topics, and main points across the sources",
+            source_ids=[str(d) for d in doc_ids] if doc_ids else [],
+            k=24
+        )
+
+class RealGenerator:
+    def complete(self, prompt, context_chunks=None):
+        from app.services.rag import call_model, RAGService
+        system_prompt, _ = RAGService(None).construct_system_prompt([])
+        context = ""
+        if context_chunks:
+            context = "\n\n".join(
+                f"[S{i+1}] (doc:{c['document_id']} p{c.get('page_number', 1)})\n{c['text']}"
+                for i, c in enumerate(context_chunks)
+            )
+        user_prompt = f"{prompt}\n\nSOURCES:\n{context}"
+        return call_model(system=system_prompt, user=user_prompt)
+
+_gen = RealGenerator()
+_ret = RealRetriever()
+_audio = AudioOverviewService(generation_client=_gen, retriever=_ret)
+
+
+class AudioGenerateRequest(BaseModel):
+    title: str
+    style: str = "deep_dive"          # "deep_dive" | "brief"
+    voice: str = "atlas-offline"       # free, on-device default
+    doc_ids: Optional[List[str]] = None
+
+
+# ---- POST /workspaces/{workspace_id}/audio/generate -----------------------
+@router.post("/workspaces/{workspace_id}/audio/generate")
+def audio_generate(workspace_id: uuid.UUID, body: AudioGenerateRequest,
+                   request: Request, db: Session = Depends(get_db)):
+    uid = current_user_id(request)
+    _get_owned_workspace(workspace_id, uid, db)
+    if not body.title.strip():
+        raise HTTPException(400, "title is required")
+    ov = _audio.generate(
+        db, str(workspace_id), title=body.title, style=body.style,
+        voice=body.voice, doc_ids=body.doc_ids,
+    )
+    db.commit()
+    return {
+        "overview_id": ov.overview_id,
+        "title": ov.title,
+        "duration": ov.duration,
+        "voice": ov.voice,
+        "style": ov.style,
+        "transcript": ov.transcript(),
+        "audio_url": f"/api/v1/workspaces/{workspace_id}/audio/{ov.overview_id}/stream",
+    }
+
+
+# ---- GET .../audio/{overview_id}/stream  (authed playback) ----------------
+@router.get("/workspaces/{workspace_id}/audio/{overview_id}/stream")
+def audio_stream(workspace_id: uuid.UUID, overview_id: str,
+                 request: Request, db: Session = Depends(get_db)):
+    uid = current_user_id(request)
+    _get_owned_workspace(workspace_id, uid, db)
+    row = _audio.get(db, overview_id)
+    if not row or row.workspace_id != str(workspace_id):
+        raise HTTPException(404, "overview not found")
+    if not os.path.exists(row.audio_path):
+        raise HTTPException(404, "audio not available")
+    return FileResponse(row.audio_path, media_type="audio/wav")
+
+
+# ---- GET .../audio/{overview_id}/export?format=pdf|md ---------------------
+@router.get("/workspaces/{workspace_id}/audio/{overview_id}/export")
+def audio_export_route(workspace_id: uuid.UUID, overview_id: str, request: Request,
+                       format: str = "pdf", db: Session = Depends(get_db)):
+    uid = current_user_id(request)
+    _get_owned_workspace(workspace_id, uid, db)
+    row = _audio.get(db, overview_id)
+    if not row or row.workspace_id != str(workspace_id):
+        raise HTTPException(404, "overview not found")
+    lines = row.transcript
+    
+    # We can retrieve the workspace documents to populate the sources list!
+    docs = db.query(Document).filter(Document.workspace_id == workspace_id).all()
+    # Map them to a list of dicts that can be indexed
+    doc_map = {str(d.id): d for d in docs}
+    
+    # To be simple and robust: build the sources list from the chunks list order!
+    chunks = _ret.retrieve(db, workspace_id, doc_ids=[str(d.id) for d in docs])
+    seen = {}
+    for c in chunks:
+        seen.setdefault(c["document_id"], len(seen) + 1)
+    
+    sources = [
+        {
+            "name": doc_map[d].filename if d in doc_map else "Source",
+            "source_label": doc_map[d].source_label if d in doc_map else None,
+            "external_url": doc_map[d].external_url if d in doc_map else None,
+        }
+        for d in seen.keys()
+    ]
+    
+    if format == "md":
+        md = audio_export.to_markdown(row.title, lines, sources=sources)
+        return Response(md, media_type="text/markdown", headers={
+            "Content-Disposition": f'attachment; filename="{overview_id}.md"'})
+    if format == "pdf":
+        pdf = audio_export.to_pdf(row.title, lines, sources=sources)
+        return Response(pdf, media_type="application/pdf", headers={
+            "Content-Disposition": f'attachment; filename="{overview_id}.pdf"'})
+    raise HTTPException(400, "format must be pdf or md")
+
+
+# ---- POST/DELETE .../audio/{overview_id}/share  (create / revoke link) ----
+@router.post("/workspaces/{workspace_id}/audio/{overview_id}/share")
+def audio_share_create(workspace_id: uuid.UUID, overview_id: str,
+                       request: Request, db: Session = Depends(get_db)):
+    uid = current_user_id(request)
+    _get_owned_workspace(workspace_id, uid, db)
+    row = _audio.get(db, overview_id)
+    if not row or row.workspace_id != str(workspace_id):
+        raise HTTPException(404, "overview not found")
+    token = audio_share.enable(db, overview_id)
+    db.commit()
+    return {"share_url": f"/listen/{token}", "token": token}
+
+
+@router.delete("/workspaces/{workspace_id}/audio/{overview_id}/share")
+def audio_share_revoke(workspace_id: uuid.UUID, overview_id: str,
+                       request: Request, db: Session = Depends(get_db)):
+    uid = current_user_id(request)
+    _get_owned_workspace(workspace_id, uid, db)
+    row = _audio.get(db, overview_id)
+    if not row or row.workspace_id != str(workspace_id):
+        raise HTTPException(404, "overview not found")
+    audio_share.disable(db, overview_id)
+    db.commit()
+    return {"ok": True}
+
+
+# ---- PUBLIC (no auth) read-only listen page data + stream -----------------
+@router.get("/public/audio/{token}")
+def public_audio(token: str, db: Session = Depends(get_db)):
+    data = audio_share.get_public(db, token)
+    if not data:
+        raise HTTPException(404, "link not found")
+    return data
+
+
+@router.get("/public/audio/{token}/stream")
+def public_audio_stream(token: str, db: Session = Depends(get_db)):
+    from app.models import AudioOverviewRow
+    row = (db.query(AudioOverviewRow)
+             .filter(AudioOverviewRow.share_token == token,
+                     AudioOverviewRow.is_public.is_(True)).first())
+    if not row or not os.path.exists(row.audio_path):
+        raise HTTPException(404, "link not found")
+    return FileResponse(row.audio_path, media_type="audio/wav")
+
+
+

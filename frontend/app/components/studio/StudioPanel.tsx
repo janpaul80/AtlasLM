@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { STUDIO_OUTPUTS, generateStudio, type StudioType } from "@/lib/studio";
 import StudioModal from "./StudioModal";
+import AudioOverviewPanel from "@/app/components/audio/AudioOverviewPanel";
 
 const ORANGE = "#FF5A1F";
 
@@ -57,6 +58,14 @@ export default function StudioPanel({
             </span>
           </button>
         ))}
+
+        <div className="border-t border-white/5 pt-3 mt-3">
+          <AudioOverviewPanel
+            workspaceId={notebookId}
+            token={token}
+            docIds={selectedSourceIds}
+          />
+        </div>
       </div>
 
       <div className="p-3 border-t border-white/5 text-[11px] text-slate-500">

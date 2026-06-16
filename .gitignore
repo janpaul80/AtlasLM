@@ -72,5 +72,6 @@ logs/
 .tmp/
 temp/
 tmp/
+scratch/
 .DS_Store
 Thumbs.db

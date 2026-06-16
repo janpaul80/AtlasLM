@@ -43,8 +43,14 @@ services:
       - SEARXNG_URL=${SEARXNG_URL}
       - SEARXNG_SECRET=${SEARXNG_SECRET}
       - RESEARCH_HTTP_TIMEOUT=${RESEARCH_HTTP_TIMEOUT}
+      - AUDIO_DIR=${AUDIO_DIR:-/data/audio}
+      - ATLAS_TTS_BIN=${ATLAS_TTS_BIN:-piper}
+      - ATLAS_VOICE_A=${ATLAS_VOICE_A:-/voices/atlas-host-a.onnx}
+      - ATLAS_VOICE_B=${ATLAS_VOICE_B:-/voices/atlas-host-b.onnx}
     ports:
       - "8080:8000"
+    volumes:
+      - atlaslm_audio:/data/audio
     depends_on:
       db:
         condition: service_healthy
@@ -70,6 +76,12 @@ services:
       - SEARXNG_URL=${SEARXNG_URL}
       - SEARXNG_SECRET=${SEARXNG_SECRET}
       - RESEARCH_HTTP_TIMEOUT=${RESEARCH_HTTP_TIMEOUT}
+      - AUDIO_DIR=${AUDIO_DIR:-/data/audio}
+      - ATLAS_TTS_BIN=${ATLAS_TTS_BIN:-piper}
+      - ATLAS_VOICE_A=${ATLAS_VOICE_A:-/voices/atlas-host-a.onnx}
+      - ATLAS_VOICE_B=${ATLAS_VOICE_B:-/voices/atlas-host-b.onnx}
+    volumes:
+      - atlaslm_audio:/data/audio
     depends_on:
       db:
         condition: service_healthy
@@ -94,3 +106,4 @@ services:
 volumes:
   atlaslm_data:
   atlaslm_redis:
+  atlaslm_audio:

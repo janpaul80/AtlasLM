@@ -201,3 +201,20 @@ class SynthesisInput(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class AudioOverviewRow(Base):
+    __tablename__ = "audio_overviews"
+
+    id           = Column(String, primary_key=True)
+    workspace_id = Column(String, nullable=False, index=True)
+    title        = Column(String, nullable=False)
+    style        = Column(String, nullable=False, default="deep_dive")
+    voice        = Column(String, nullable=False, default="atlas-offline")
+    duration     = Column(Float, nullable=False, default=0)
+    audio_path   = Column(String, nullable=True)
+    transcript   = Column(JSONB, nullable=False, default=list)
+    share_token  = Column(String, unique=True, nullable=True, index=True)
+    is_public    = Column(Boolean, nullable=False, default=False)
+    created_at   = Column(DateTime(timezone=True), server_default=func.now())
+
+
+
