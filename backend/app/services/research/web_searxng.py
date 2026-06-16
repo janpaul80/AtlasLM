@@ -33,7 +33,11 @@ class SearxngAdapter(SearchAdapter):
                 f"{SEARXNG_URL}/search",
                 params={"q": query, "format": "json", "safesearch": 1},
                 timeout=TIMEOUT,
-                headers={"Accept": "application/json"},
+                headers={
+                    "Accept": "application/json",
+                    "X-Real-IP": "127.0.0.1",
+                    "X-Forwarded-For": "127.0.0.1"
+                },
             )
             r.raise_for_status()
             data = r.json()

@@ -10,7 +10,7 @@ services:
       - SEARXNG_BASE_URL=http://searxng:8080/
       - SEARXNG_SECRET=${SEARXNG_SECRET:-change-me-in-env}
     volumes:
-      - ./docker/searxng:/etc/searxng:rw
+      - ./searxng:/etc/searxng:rw
     # No host port needed - backend reaches it on the internal network as
     # http://searxng:8080  (set SEARXNG_URL accordingly in the backend env).
 

@@ -9,7 +9,18 @@ from __future__ import annotations
 import json
 import logging
 
-from app.core.database import SessionLocal              # adjust import to your session factory
+# Resilient session import - works whether your factory lives in app.db,
+# app.database, or app.core.db (Patch 009 may differ - falls back gracefully).
+try:
+    from app.core.database import SessionLocal
+except Exception:  # noqa: BLE001
+    try:
+        from app.db import SessionLocal
+    except Exception:  # noqa: BLE001
+        try:
+            from app.database import SessionLocal
+        except Exception:  # noqa: BLE001
+            from app.core.db import SessionLocal
 from . import jobs as research_jobs
 from .service import DeepResearchService
 
@@ -55,5 +66,4 @@ def handle_research_queue(poll_timeout: int = 5) -> None:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    logging.getLogger("httpx").setLevel(logging.WARNING)
     handle_research_queue()
