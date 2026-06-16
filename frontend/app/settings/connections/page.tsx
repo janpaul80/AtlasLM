@@ -7,6 +7,7 @@ import LiveSyncPanel from "@/app/components/connections/LiveSyncPanel";
 import Header from "@/components/layout/header";
 import Footer from "@/components/layout/footer";
 import Link from "next/link";
+import AtlasLogo from "@/app/components/brand/AtlasLogo";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -88,7 +89,10 @@ export default function ConnectionsPage() {
             </svg>
             Back to Dashboard
           </Link>
-          <h1 className="text-3xl font-extrabold text-white tracking-tight mb-2">Connections</h1>
+          <div className="flex items-center justify-between gap-4 mb-2">
+            <h1 className="text-3xl font-extrabold text-white tracking-tight">Connections</h1>
+            <AtlasLogo variant="full" size={32} />
+          </div>
           <p className="text-zinc-400 text-sm">
             Manage your external integrations and import documents directly into your workspace.
           </p>
