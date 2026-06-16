@@ -504,3 +504,36 @@ def build_citation_map(chunks: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]
         }
     return citation_map
 
+
+def persist_blocks(workspace_id, filename: str, kind: str, blocks: list, origin: str = "google_drive") -> str:
+    import uuid
+    from app.core.database import SessionLocal
+    from app.services.pipeline import DocumentPipeline
+    
+    # Inject meta if it doesn't exist
+    for b in blocks:
+        if not isinstance(b, dict):
+            continue
+        if "meta" not in b or b["meta"] is None:
+            b["meta"] = {}
+        b["meta"].setdefault("origin", origin)
+        b["meta"].setdefault("source_label", "Google Drive")
+    
+    db = SessionLocal()
+    try:
+        pipeline = DocumentPipeline(db)
+        async def _run():
+            doc = await pipeline.ingest_extracted_blocks(
+                workspace_id=uuid.UUID(str(workspace_id)),
+                filename=filename,
+                file_type=kind,
+                blocks=blocks,
+                source_type=origin,
+            )
+            return str(doc.id)
+        
+        return _run_coroutine_sync(_run())
+    finally:
+        db.close()
+
+

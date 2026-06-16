@@ -1207,4 +1207,164 @@ def public_audio_stream(token: str, db: Session = Depends(get_db)):
     return FileResponse(row.audio_path, media_type="audio/wav")
 
 
+# ============================================================================
+# PATCH 011 - Google Workspace connector routes
+# APPEND the contents of this file at the BOTTOM of your EXISTING
+# backend/app/api/endpoints.py (the consolidated api/v1 router). Do NOT create a
+# new router file - reuse the same `router`, `get_current_user`, and the DB
+# session dependency the other routes use.
+# ============================================================================
+import os
+import json
+import time
+import secrets
+import logging
+from typing import List, Optional
+from pydantic import BaseModel
+from fastapi import Depends, HTTPException
+from fastapi.responses import RedirectResponse
+
+from app.auth import get_current_user
+from app.core.database import get_db
+from app.services.connections.oauth import GoogleOAuth
+from app.services.connections.drive import DriveConnector
+from app.services.connections.manager import ConnectionManager
+
+_log = logging.getLogger("api.connections")
+_FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+
+# Short-lived CSRF/PKCE state. Swap for Redis in multi-instance deploys; the
+# interface (set/pop) is intentionally tiny so that is a drop-in change.
+_PENDING: dict = {}
+_STATE_TTL = 600
+
+
+def _state_set(state: str, payload: dict) -> None:
+    _PENDING[state] = (time.time() + _STATE_TTL, payload)
+    for k in [k for k, (exp, _) in _PENDING.items() if exp < time.time()]:
+        _PENDING.pop(k, None)
+
+
+def _state_pop(state: str) -> Optional[dict]:
+    item = _PENDING.pop(state, None)
+    if not item or item[0] < time.time():
+        return None
+    return item[1]
+
+
+# ---- persist bridge: route picked Drive files into the EXISTING pipeline ----
+def _persist_drive_file(workspace_id: str, filename: str, ext: str, raw: bytes, db: Session):
+    """Write bytes to a temp file and run the EXISTING Patch-003 ingest path."""
+    import tempfile
+    from app.services.ingest.dispatcher import detect_kind, extract_blocks
+    with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+        tmp.write(raw)
+        path = tmp.name
+    try:
+        kind = detect_kind(path)
+        blocks = extract_blocks(kind, path)
+        from app.services.rag import persist_blocks
+        source_id = persist_blocks(workspace_id, filename, kind, blocks, origin="google_drive")
+        return source_id, len(blocks)
+    finally:
+        try: os.unlink(path)
+        except OSError: pass
+
+
+# ---- POST /api/v1/connections/google/start --------------------------------
+@router.post("/connections/google/start")
+def google_start(workspace_id: str, user=Depends(get_current_user)):
+    oauth = GoogleOAuth()
+    if not oauth.configured:
+        raise HTTPException(503, "Google connector is not configured on this server.")
+    state = secrets.token_urlsafe(24)
+    auth_url, verifier = oauth.build_auth_url(state)
+    _state_set(state, {"user_id": str(user.id), "workspace_id": workspace_id,
+                       "verifier": verifier})
+    return {"auth_url": auth_url}
+
+
+# ---- GET /api/v1/connections/google/callback ------------------------------
+@router.get("/connections/google/callback")
+def google_callback(state: str = "", code: str = "", error: str = "",
+                    db=Depends(get_db)):
+    ctx = _state_pop(state)
+    if error or not ctx or not code:
+        return RedirectResponse(f"{_FRONTEND_URL}/settings/connections?google=error")
+    try:
+        oauth = GoogleOAuth()
+        tokens = oauth.exchange_code(code, ctx["verifier"])
+        ConnectionManager(db).save(user_id=ctx["user_id"],
+                                   workspace_id=ctx["workspace_id"], tokens=tokens)
+    except Exception as e:
+        _log.warning("google callback failed: %s", e)
+        return RedirectResponse(f"{_FRONTEND_URL}/settings/connections?google=error")
+    return RedirectResponse(f"{_FRONTEND_URL}/settings/connections?google=connected")
+
+
+# ---- GET /api/v1/connections/google ---------------------------------------
+@router.get("/connections/google")
+def google_status(workspace_id: str, user=Depends(get_current_user),
+                  db=Depends(get_db)):
+    return ConnectionManager(db).status(workspace_id=workspace_id)
+
+
+# ---- GET /api/v1/connections/google/picker-config -------------------------
+@router.get("/connections/google/picker-config")
+def google_picker_config(workspace_id: str, user=Depends(get_current_user),
+                         db=Depends(get_db)):
+    """Give the browser a short-lived access token + app id for the Picker."""
+    mgr = ConnectionManager(db)
+    try:
+        token = mgr.access_token(workspace_id=workspace_id)
+    except Exception as e:
+        raise HTTPException(400, str(e))
+    return {
+        "access_token": token,
+        "app_id": os.getenv("ATLAS_GOOGLE_PROJECT_NUMBER", ""),
+        "api_key": os.getenv("ATLAS_GOOGLE_PICKER_API_KEY", ""),
+        "client_id": os.getenv("ATLAS_GOOGLE_CLIENT_ID", ""),
+    }
+
+
+# ---- POST /api/v1/connections/google/ingest -------------------------------
+class IngestRequest(BaseModel):
+    file_ids: List[str]
+
+
+@router.post("/workspaces/{workspace_id}/connections/google/ingest")
+def google_ingest(workspace_id: str, body: IngestRequest,
+                  user=Depends(get_current_user), db=Depends(get_db)):
+    if not body.file_ids:
+        raise HTTPException(400, "Select at least one file.")
+    mgr = ConnectionManager(db)
+    try:
+        token = mgr.access_token(workspace_id=workspace_id)
+    except Exception as e:
+        raise HTTPException(400, str(e))
+
+    def persist_cb(ws_id: str, fname: str, extension: str, content_bytes: bytes):
+        return _persist_drive_file(ws_id, fname, extension, content_bytes, db)
+
+    results = DriveConnector(token).ingest_many(
+        body.file_ids, workspace_id=workspace_id, persist=persist_cb)
+    return {
+        "imported": [
+            {"id": r.id, "name": r.name, "kind": r.kind, "ok": r.ok,
+             "blocks": r.block_count, "error": r.error, "source_id": r.source_id}
+            for r in results
+        ],
+        "ok_count": sum(1 for r in results if r.ok),
+        "fail_count": sum(1 for r in results if not r.ok),
+    }
+
+
+# ---- DELETE /api/v1/connections/google ------------------------------------
+@router.delete("/connections/google")
+def google_disconnect(workspace_id: str, user=Depends(get_current_user),
+                      db=Depends(get_db)):
+    return ConnectionManager(db).disconnect(workspace_id=workspace_id)
+
+
+
 

@@ -1028,6 +1028,27 @@ export default function Dashboard() {
                     ))}
                   </select>
                 </div>
+
+                <div className="flex flex-col gap-2 mt-2">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                    Workspace Connections
+                  </label>
+                  <Link
+                    href="/settings/connections"
+                    className="w-full bg-zinc-900 border border-zinc-850 hover:bg-zinc-800 rounded-lg p-3 text-sm text-zinc-200 flex items-center justify-between hover:border-zinc-700 transition-all group"
+                  >
+                    <span>Manage Integrations</span>
+                    <svg
+                      className="w-4 h-4 text-zinc-500 group-hover:text-zinc-350 transition-colors"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </Link>
+                </div>
               </div>
               <button
                 onClick={() => setShowSettings(false)}

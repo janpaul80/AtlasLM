@@ -217,4 +217,25 @@ class AudioOverviewRow(Base):
     created_at   = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class WorkspaceConnection(Base):
+    __tablename__ = "workspace_connections"
+
+    id                = Column(String, primary_key=True, default=lambda: "conn_" + uuid.uuid4().hex[:16])
+    user_id           = Column(String, nullable=False, index=True)
+    workspace_id      = Column(String, nullable=False, index=True)
+    provider          = Column(String, nullable=False, default="google")   # 'google'
+    account_email     = Column(String, nullable=True)
+    scope             = Column(String, nullable=True)
+    # encrypted refresh token (ciphertext only) + which key encrypted it
+    refresh_token_enc = Column(String, nullable=False)
+    key_id            = Column(String, nullable=False, default="v1")
+    # cached short-lived access token (re-fetched on expiry)
+    access_token      = Column(String, nullable=True)
+    access_expires_at = Column(Float, nullable=True)
+    status            = Column(String, nullable=False, default="connected")  # connected | revoked
+    created_at        = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at        = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+
 

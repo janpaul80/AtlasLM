@@ -22,7 +22,7 @@ COPY . .
 # Provider-name source guard. Fails the image build on a hard-coded leak.
 COPY scripts/check_provider_leak.sh /tmp/check_provider_leak.sh
 RUN grep -rIl '' app \
-      | grep -vE 'app/core/providers.py|app/core/config.py|app/models.py|app/api/endpoints.py' \
+      | grep -vE 'app/core/providers.py|app/core/config.py|app/models.py|app/api/endpoints.py|app/services/connections/' \
       | xargs cat 2>/dev/null \
       | sh /tmp/check_provider_leak.sh
 
