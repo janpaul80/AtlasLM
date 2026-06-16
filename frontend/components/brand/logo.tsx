@@ -15,7 +15,7 @@ export default function Logo({
 }: LogoProps) {
   return (
     <div className={`flex items-center justify-center select-none ${className}`}>
-      <AtlasLogo size={size} variant={layout === "vertical" ? "mark" : "full"} />
+      <AtlasLogo size={size} variant={layout === "vertical"? "mark": "full"} />
     </div>
   );
 }
