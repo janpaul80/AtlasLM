@@ -1,0 +1,78 @@
+/* Patch 016B - AtlasLM mobile safe-area + native polish.
+   Place at: android-shell/src/styles/atlas-mobile.css
+   Import once in the app shell, AFTER atlas-theme.css so tokens are available.
+   Reuses the Atlas design system; this only adds the mobile-specific layer. */
+
+:root {
+  /* fall back gracefully on older webviews */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+
+html, body {
+  background: var(--atlas-bg);
+  color: var(--atlas-text);
+  font-family: var(--atlas-font);
+  /* never let content sit under the status bar or gesture pill */
+  overscroll-behavior-y: none;
+}
+
+/* App-wide padding so headers and bottom nav clear the notch and home bar. */
+.atlas-app-shell {
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
+  min-height: 100dvh;
+}
+
+/* Native-style bottom tab bar, thumb-reachable. */
+.atlas-tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  height: calc(56px + var(--safe-bottom));
+  padding-bottom: var(--safe-bottom);
+  background: var(--atlas-surface);
+  border-top: 1px solid var(--atlas-line);
+}
+
+.atlas-tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 0;
+  color: var(--atlas-muted);
+  font-size: 11px;
+  background: none;
+  border: 0;
+}
+
+.atlas-tab[aria-current="page"] {
+  color: var(--atlas-accent);
+}
+
+/* Tap targets at least 44px, accessibility floor. */
+.atlas-tab, .atlas-app-shell button, .atlas-app-shell a[role="button"] {
+  min-height: 44px;
+}
+
+/* Long-document reading mode: comfortable measure on a phone. */
+.atlas-doc {
+  max-width: 68ch;
+  margin: 0 auto;
+  line-height: 1.6;
+  padding: 16px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}

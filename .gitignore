@@ -75,3 +75,7 @@ tmp/
 scratch/
 .DS_Store
 Thumbs.db
+
+# Android keystore - never commit
+*.jks
+keystore.properties

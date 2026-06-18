@@ -1,3 +1,6 @@
+// Server-only OAuth handler. Not part of the mobile static export.
+export const dynamic = process.env.BUILD_TARGET === "mobile" ? "force-static" : "force-dynamic";
+
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { supabaseServer } from '@/lib/supabaseServer'
