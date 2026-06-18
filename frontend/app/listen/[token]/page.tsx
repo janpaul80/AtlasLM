@@ -7,7 +7,7 @@ import PublicListen from "./PublicListen";
 
 const SERVER_API = "http://backend:8000/api/v1";
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "/api/v1";
-const CLIENT_API = API_BASE.endsWith("/api/v1") ? API_BASE : `${API_BASE}/api/v1`;
+const CLIENT_API = API_BASE.endsWith("/api/v1")? API_BASE: `${API_BASE}/api/v1`;
 
 async function getData(token: string) {
   try {

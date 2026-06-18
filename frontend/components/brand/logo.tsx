@@ -1,9 +1,10 @@
 import React from "react";
+import AtlasLogo from "../../app/components/brand/AtlasLogo";
 
 interface LogoProps {
   className?: string;
   size?: number; // width/height limit
-  showText?: boolean; // kept for compatibility, ignored since logo.png has built-in text
+  showText?: boolean; // kept for compatibility
   layout?: "horizontal" | "vertical";
 }
 
@@ -12,20 +13,9 @@ export default function Logo({
   size = 48, 
   layout = "horizontal"
 }: LogoProps) {
-  
-  // Clean container scaling the original logo.png image dynamically
   return (
     <div className={`flex items-center justify-center select-none ${className}`}>
-      <img
-        src="/logo.png"
-        alt="Atlas LM"
-        className="object-contain transition-transform duration-300 hover:scale-105"
-        style={{ 
-          width: layout === "vertical" ? size * 1.2 : size, 
-          height: "auto", 
-          maxHeight: size 
-        }}
-      />
+      <AtlasLogo size={size} variant={layout === "vertical"? "mark": "full"} />
     </div>
   );
 }

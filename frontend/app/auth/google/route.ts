@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
       },
     })
 
-    if (error || !data.url) {
+    if (error ||!data.url) {
       console.error('Google OAuth start error:', error)
       return NextResponse.redirect(new URL('/login?error=oauth_start_failed', redirectOrigin))
     }

@@ -119,8 +119,8 @@ export function OnboardingTour() {
   const isFinalStep = "final" in currentStep && currentStep.final;
 
   return (
-    <div className={`tour-backdrop ${visible ? "show" : ""}`}>
-      <div className={`tour ${isFinalStep ? "final-mode" : ""}`} id="tourBox">
+    <div className={`tour-backdrop ${visible? "show": ""}`}>
+      <div className={`tour ${isFinalStep? "final-mode": ""}`} id="tourBox">
         <div className="tour-aurora" />
         <span className="tour-step-badge" id="tourBadge">
           {step + 1} of {TOUR_STEPS.length}
@@ -135,10 +135,10 @@ export function OnboardingTour() {
         {!isFinalStep && (
           <div className="tour-left">
             <div className="tour-icon" id="tourIcon">
-              {"icon" in currentStep ? currentStep.icon : null}
+              {"icon" in currentStep? currentStep.icon: null}
             </div>
-            <h2 id="tourTitle">{"title" in currentStep ? currentStep.title : ""}</h2>
-            <p id="tourDesc">{"desc" in currentStep ? currentStep.desc : ""}</p>
+            <h2 id="tourTitle">{"title" in currentStep? currentStep.title: ""}</h2>
+            <p id="tourDesc">{"desc" in currentStep? currentStep.desc: ""}</p>
             
             <div className="tour-cta-row">
               <button
@@ -366,7 +366,7 @@ export function OnboardingTour() {
               material, with citations you can verify. Everything you just saw is live in this dashboard right now.
             </p>
             <div
-              className={`tour-optin ${optIn ? "checked" : ""}`}
+              className={`tour-optin ${optIn? "checked": ""}`}
               onClick={() => setOptIn(!optIn)}
             >
               <span className="cb">
@@ -395,7 +395,7 @@ export function OnboardingTour() {
           {TOUR_STEPS.map((_, i) => (
             <span
               key={i}
-              className={`tour-dot ${i === step ? "on" : ""}`}
+              className={`tour-dot ${i === step? "on": ""}`}
               onClick={() => setStep(i)}
               style={{ cursor: "pointer" }}
             />

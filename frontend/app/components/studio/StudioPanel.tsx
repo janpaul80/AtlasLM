@@ -26,7 +26,7 @@ export default function StudioPanel({
     try {
       const data = await generateStudio(type, notebookId, selectedSourceIds, token);
       setResult(data);
-      setPhase(data?.empty ? "error" : "done");
+      setPhase(data?.empty? "error": "done");
     } catch {
       setPhase("error");
     }

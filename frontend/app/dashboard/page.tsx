@@ -19,7 +19,7 @@ function extractYoutubeTimestamp(content: string): string {
   const match = content.match(/##\s*\[(\d+:\d+(?::\d+)?)\]/);
   if (match) return match[1];
   const fallback = content.match(/\[(\d+:\d+(?::\d+)?)\]/);
-  return fallback ? fallback[1] : "";
+  return fallback? fallback[1]: "";
 }
 
 function parseTimeToSeconds(timeStr: string): number {
@@ -69,7 +69,7 @@ export default function Dashboard() {
   const [sources, setSources] = useState<DocumentSource[]>([]);
   const [showAddSource, setShowAddSource] = useState(false);
   const [drOpen, setDrOpen] = useState(false);
-  const hasReadySources = sources.some((src) => src.status === "ready" || !src.status || (src.status as string) === "grounded");
+  const hasReadySources = sources.some((src) => src.status === "ready" ||!src.status || (src.status as string) === "grounded");
   const [activeSourceTab, setActiveSourceTab] = useState<SourceTab>("files");
   const [urlInput, setUrlInput] = useState("");
   const [pasteTitle, setPasteTitle] = useState("");
@@ -179,7 +179,7 @@ export default function Dashboard() {
       setWorkspaces(data);
       
       // Restore selected workspace from localStorage
-      const savedWorkspaceId = typeof window !== 'undefined' ? localStorage.getItem("selectedWorkspaceId") : null;
+      const savedWorkspaceId = typeof window!== 'undefined'? localStorage.getItem("selectedWorkspaceId"): null;
       let ws = data.find((w) => w.id === savedWorkspaceId) || data[0];
       if (ws) {
         setSelectedWorkspace(ws);
@@ -261,7 +261,7 @@ export default function Dashboard() {
   // When workspace changes, fetch documents & sessions + save to localStorage
   useEffect(() => {
     if (selectedWorkspace) {
-      if (typeof window !== 'undefined') {
+      if (typeof window!== 'undefined') {
         localStorage.setItem("selectedWorkspaceId", selectedWorkspace.id);
       }
       fetchDocuments(selectedWorkspace.id);
@@ -280,7 +280,7 @@ export default function Dashboard() {
   // When session changes, fetch session details + save to localStorage
   useEffect(() => {
     if (selectedSessionId) {
-      if (typeof window !== 'undefined') {
+      if (typeof window!== 'undefined') {
         localStorage.setItem("selectedSessionId", selectedSessionId);
       }
       fetchSessionDetails(selectedSessionId);
@@ -314,7 +314,7 @@ export default function Dashboard() {
     try {
       const data = await apiClient.get<Workspace[]>("/api/v1/workspaces");
       setWorkspaces(data);
-      if (data.length > 0 && !selectedWorkspace) {
+      if (data.length > 0 &&!selectedWorkspace) {
         setSelectedWorkspace(data[0]);
       }
     } catch (e) {
@@ -328,7 +328,7 @@ export default function Dashboard() {
     if (!newWorkspaceName.trim()) return;
     try {
       const data = await apiClient.post<Workspace>("/api/v1/workspaces", { name: newWorkspaceName });
-      setWorkspaces((prev) => [data, ...prev]);
+      setWorkspaces((prev) => [data,...prev]);
       setSelectedWorkspace(data);
       setNewWorkspaceName("");
       setUiError("");
@@ -359,8 +359,8 @@ export default function Dashboard() {
       setSessions(data);
       
       // Try to restore selected session from localStorage
-      const savedSessionId = typeof window !== 'undefined' ? localStorage.getItem("selectedSessionId") : null;
-      const savedSession = savedSessionId ? data.find((s) => s.id === savedSessionId) : null;
+      const savedSessionId = typeof window!== 'undefined'? localStorage.getItem("selectedSessionId"): null;
+      const savedSession = savedSessionId? data.find((s) => s.id === savedSessionId): null;
       
       if (savedSession) {
         setSelectedSessionId(savedSession.id);
@@ -379,7 +379,7 @@ export default function Dashboard() {
   const handleCreateSession = async (wsId: string) => {
     try {
       const data = await apiClient.post<any>(`/api/v1/workspaces/${wsId}/sessions`, { title: "Notebook Chat" });
-      setSessions((prev) => [data, ...prev]);
+      setSessions((prev) => [data,...prev]);
       setSelectedSessionId(data.id);
     } catch (e) {
       console.error(e);
@@ -399,7 +399,7 @@ export default function Dashboard() {
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !selectedWorkspace) return;
+    if (!file ||!selectedWorkspace) return;
 
     setUploadProgress({
       fileName: file.name,
@@ -457,7 +457,7 @@ export default function Dashboard() {
 
   const handleURLIngest = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!urlInput.trim() || !selectedWorkspace) return;
+    if (!urlInput.trim() ||!selectedWorkspace) return;
 
     setUploadProgress({
       fileName: urlInput,
@@ -505,7 +505,7 @@ export default function Dashboard() {
       });
       const body = await res.json();
       if (res.status === 202 || res.status === 201 || res.status === 250 || res.status === 200) {
-        setStudioOutputs((prev) => [body, ...prev]);
+        setStudioOutputs((prev) => [body,...prev]);
         pollStudioOutput(body.id, selectedWorkspace.id);
         setActiveTab("studio");
         setUiError("");
@@ -524,7 +524,7 @@ export default function Dashboard() {
     const interval = setInterval(async () => {
       try {
         const out = await apiClient.get<StudioOutput>(`/api/v1/workspaces/${workspaceId}/studio/${outputId}`);
-        setStudioOutputs((prev) => prev.map((o) => (o.id === out.id ? out : o)));
+        setStudioOutputs((prev) => prev.map((o) => (o.id === out.id? out: o)));
         
         // Also update open output details if open
         setOpenOutput((currentOpen) => {
@@ -548,8 +548,8 @@ export default function Dashboard() {
     if (!selectedWorkspace) return;
     try {
       await apiClient.del(`/api/v1/workspaces/${selectedWorkspace.id}/studio/${outputId}`);
-      setStudioOutputs((prev) => prev.filter((o) => o.id !== outputId));
-      setOpenOutput((curr) => (curr && curr.id === outputId ? null : curr));
+      setStudioOutputs((prev) => prev.filter((o) => o.id!== outputId));
+      setOpenOutput((curr) => (curr && curr.id === outputId? null: curr));
     } catch (e) {
       console.error(e);
       setUiError(getErrorMessage(e, "Failed to delete Studio output."));
@@ -560,7 +560,7 @@ export default function Dashboard() {
 
   const handleTextIngest = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!pasteContent.trim() || !selectedWorkspace) return;
+    if (!pasteContent.trim() ||!selectedWorkspace) return;
 
     const title = pasteTitle.trim() || "Untitled research note";
     const content = pasteContent.trim();
@@ -612,7 +612,7 @@ export default function Dashboard() {
   const handleDeleteDocument = async (docId: string) => {
     try {
       await apiClient.del(`/api/v1/documents/${docId}`);
-      setSources((prev) => prev.filter((d) => d.id !== docId));
+      setSources((prev) => prev.filter((d) => d.id!== docId));
     } catch (e) {
       console.error(e);
       setUiError(getErrorMessage(e, "Failed to delete source."));
@@ -623,14 +623,14 @@ export default function Dashboard() {
 
   const handleSendChatMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chatInput.trim() || !selectedSessionId || chatLoading) return;
+    if (!chatInput.trim() ||!selectedSessionId || chatLoading) return;
 
     const userQuery = chatInput;
     const sessionId = selectedSessionId; // capture outside closure
     setChatInput("");
     setChatLoading(true);
     setStreamingText("");
-    // Reset ref-based accumulators  -  avoids stale closure captures of state
+    // Reset ref-based accumulators - avoids stale closure captures of state
     streamingAccumRef.current = "";
     citationsMapRef.current = {};
     
@@ -694,7 +694,7 @@ export default function Dashboard() {
         }
       }
 
-      // Use ref values to avoid stale closure  -  always correct final text
+      // Use ref values to avoid stale closure - always correct final text
       const finalContent = streamingAccumRef.current;
       const finalCitations = citationsMapRef.current;
 
@@ -773,7 +773,7 @@ export default function Dashboard() {
         <div className="flex flex-wrap gap-2">
           {citations.map((cite: any, idx: number) => {
             const doc = sources.find((s) => s.id === cite.document_id);
-            const filename = doc ? doc.filename : "Untitled Document";
+            const filename = doc? doc.filename: "Untitled Document";
             const tag = `source_${idx + 1}`;
             const details = {
               tag,
@@ -790,7 +790,7 @@ export default function Dashboard() {
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-medium bg-zinc-900 text-zinc-300 border border-zinc-850 hover:bg-zinc-800 transition cursor-pointer"
               >
                 <span>{filename}</span>
-                {cite.page_number != null && (
+                {cite.page_number!= null && (
                   <span className="text-[9px] text-zinc-500">(Page {cite.page_number})</span>
                 )}
               </button>
@@ -849,11 +849,11 @@ export default function Dashboard() {
             <div key={idx} className="rounded-xl border border-zinc-900 bg-zinc-950/20 overflow-hidden">
               <button
                 type="button"
-                onClick={() => setOpenSectionIdx(isOpen ? null : idx)}
+                onClick={() => setOpenSectionIdx(isOpen? null: idx)}
                 className="w-full text-left px-4 py-3.5 flex items-center justify-between text-white font-bold text-xs hover:bg-zinc-900/30 transition-colors"
               >
                 <span>{section.heading}</span>
-                <span className="text-zinc-550 text-[10px]">{isOpen ? "▲" : "▼"}</span>
+                <span className="text-zinc-550 text-[10px]">{isOpen? "▲": "▼"}</span>
               </button>
               {isOpen && (
                 <div className="px-4 pb-4 pt-1.5 flex flex-col gap-3.5 border-t border-zinc-900/40">
@@ -885,7 +885,7 @@ export default function Dashboard() {
       <div className="flex flex-col gap-5 w-full">
         {questions.map((q: any, qIdx: number) => {
           const chosenIdx = selectedAnswers[qIdx];
-          const hasSelected = chosenIdx !== undefined;
+          const hasSelected = chosenIdx!== undefined;
           const correctIdx = q.answer_index;
           return (
             <div key={qIdx} className="p-4 rounded-xl border border-zinc-900 bg-zinc-950/25 flex flex-col gap-3.5">
@@ -909,12 +909,12 @@ export default function Dashboard() {
                       key={cIdx}
                       type="button"
                       disabled={hasSelected}
-                      onClick={() => setSelectedAnswers(prev => ({ ...prev, [qIdx]: cIdx }))}
+                      onClick={() => setSelectedAnswers(prev => ({...prev, [qIdx]: cIdx }))}
                       className={`text-left p-2.5 rounded-lg border text-xs transition flex items-center justify-between ${btnStyle}`}
                     >
                       <span>{choice}</span>
                       {hasSelected && isCorrect && <span className="text-green-400">✓</span>}
-                      {hasSelected && isSelected && !isCorrect && <span className="text-red-400">✕</span>}
+                      {hasSelected && isSelected &&!isCorrect && <span className="text-red-400">✕</span>}
                     </button>
                   );
                 })}
@@ -955,12 +955,12 @@ export default function Dashboard() {
           onClick={() => setIsFlipped(!isFlipped)}
           className="w-full h-48 rounded-2xl border border-zinc-900 bg-zinc-950/30 cursor-pointer select-none flex flex-col items-center justify-center p-6 text-center transition-all duration-300 hover:scale-[1.005]"
         >
-          {!isFlipped ? (
+          {!isFlipped? (
             <div className="flex flex-col gap-1.5">
               <span className="text-[9px] uppercase font-bold tracking-wider text-orange-500 mb-1">Prompt</span>
               <p className="text-white text-xs font-semibold leading-relaxed">{currentCard.front}</p>
             </div>
-          ) : (
+          ): (
             <div className="flex flex-col gap-1.5">
               <span className="text-[9px] uppercase font-bold tracking-wider text-green-400 mb-1">Answer</span>
               <p className="text-zinc-200 text-xs leading-relaxed">{currentCard.back}</p>
@@ -1023,7 +1023,7 @@ export default function Dashboard() {
                   >
                     {availableProviders.map((prov) => (
                       <option key={prov.id} value={prov.id} disabled={prov.status === "inactive"}>
-                        {prov.name} {prov.status === "inactive" ? "(Inactive)" : ""}
+                        {prov.name} {prov.status === "inactive"? "(Inactive)": ""}
                       </option>
                     ))}
                   </select>
@@ -1180,7 +1180,7 @@ export default function Dashboard() {
         )}
 
         {/* Tab Content Rendering */}
-        {activeTab === "canvas" ? (
+        {activeTab === "canvas"? (
           <div className="flex-grow relative overflow-hidden bg-zinc-950">
             {selectedWorkspace && (
               <ResearchCanvas
@@ -1205,9 +1205,9 @@ export default function Dashboard() {
               />
             )}
           </div>
-        ) : activeTab === "studio" ? (
+        ): activeTab === "studio"? (
           <div className="flex-grow overflow-y-auto p-6 flex flex-col gap-6">
-            {openOutput ? (
+            {openOutput? (
               /* Reader View */
               <div className="max-w-3xl mx-auto w-full flex flex-col gap-4">
                 <div className="flex items-center justify-between border-b border-zinc-900/60 pb-4">
@@ -1224,7 +1224,7 @@ export default function Dashboard() {
                         const node = synthesisNodes.find((n) => n.id === openOutput.synthesis_node_id);
                         return (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold bg-purple-950/40 text-purple-400 border border-purple-500/30">
-                            Scoped to: {node ? node.title : "Synthesis Node"}
+                            Scoped to: {node? node.title: "Synthesis Node"}
                           </span>
                         );
                       })()}
@@ -1274,7 +1274,7 @@ export default function Dashboard() {
                   {renderCitationsFooter(openOutput.citations || [])}
                 </div>
               </div>
-            ) : (
+            ): (
               /* Grid / Main List View */
               <div className="max-w-3xl mx-auto w-full flex flex-col gap-6">
                 <div className="border-b border-zinc-900/60 pb-4">
@@ -1306,11 +1306,11 @@ export default function Dashboard() {
                 {/* Outputs List */}
                 <div className="flex flex-col gap-3 mt-4">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">History & Saved Outputs</span>
-                  {studioOutputs.length === 0 ? (
+                  {studioOutputs.length === 0? (
                     <div className="text-center p-12 border border-zinc-900 border-dashed rounded-xl">
                       <p className="text-xs text-zinc-500">No Studio outputs generated yet. Choose a format above to begin.</p>
                     </div>
-                  ) : (
+                  ): (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {studioOutputs.map((out) => {
                         const isPending = out.status === "pending" || out.status === "processing";
@@ -1318,7 +1318,7 @@ export default function Dashboard() {
                         return (
                           <div
                             key={out.id}
-                            onClick={() => !isPending && !isFailed && setOpenOutput(out)}
+                            onClick={() =>!isPending &&!isFailed && setOpenOutput(out)}
                             className={`p-4 rounded-xl border transition-all flex flex-col justify-between h-36 ${
                               isPending
                                 ? "border-zinc-900 bg-zinc-900/20"
@@ -1346,7 +1346,7 @@ export default function Dashboard() {
                             </div>
 
                             <div className="mt-4 flex items-center justify-between text-[10px]">
-                              {isPending ? (
+                              {isPending? (
                                 <span className="text-orange-500 font-bold flex items-center gap-1.5">
                                   <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
                                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -1354,11 +1354,11 @@ export default function Dashboard() {
                                   </svg>
                                   Generating...
                                 </span>
-                              ) : isFailed ? (
+                              ): isFailed? (
                                 <span className="text-red-500 font-bold max-w-[200px] truncate" title={out.error || out.error_message || "Generation failed"}>
                                   Failed: {out.error || out.error_message || "Unknown error"}
                                 </span>
-                              ) : (
+                              ): (
                                 <span className="text-zinc-550">Ready</span>
                               )}
                               <span className="text-zinc-600 text-[9px]">
@@ -1374,10 +1374,10 @@ export default function Dashboard() {
               </div>
             )}
           </div>
-        ) : (
+        ): (
           /* Chat Window Tab Content */
           <div className="flex-grow overflow-y-auto p-6 flex flex-col gap-6">
-            {messages.length === 0 && !streamingText ? (
+            {messages.length === 0 &&!streamingText? (
               /* Empty State */
               <div className="flex-grow flex flex-col items-center justify-center text-center max-w-md mx-auto">
                 <span className="w-12 h-12 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center mb-6">
@@ -1388,17 +1388,17 @@ export default function Dashboard() {
                   Create notebook → Add source → Ask question. Start by creating/selecting a notebook, then ingest a PDF, DOCX, TXT, MD, or CSV file, website URL, or pasted text.
                 </p>
               </div>
-            ) : (
+            ): (
               <div className="flex flex-col gap-6 max-w-3xl mx-auto w-full">
                 {messages.map((msg) => {
                   const isUser = msg.role === "user";
                   return (
                     <div
                       key={msg.id}
-                      className={`flex flex-col gap-2 max-w-[85%] ${isUser ? "self-end items-end" : "self-start items-start"}`}
+                      className={`flex flex-col gap-2 max-w-[85%] ${isUser? "self-end items-end": "self-start items-start"}`}
                     >
                       <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-600">
-                        {isUser ? "You" : "AtlasLM"}
+                        {isUser? "You": "AtlasLM"}
                       </span>
                       <div
                         className={`p-4 rounded-xl text-xs leading-relaxed border ${
@@ -1407,7 +1407,7 @@ export default function Dashboard() {
                             : "bg-zinc-950/30 border-zinc-900/60 text-zinc-200"
                         }`}
                       >
-                        {isUser ? msg.content : renderMessageContentWithCitations(msg.content, msg.citations)}
+                        {isUser? msg.content: renderMessageContentWithCitations(msg.content, msg.citations)}
                       </div>
                     </div>
                   );
@@ -1451,15 +1451,15 @@ export default function Dashboard() {
           <form onSubmit={handleSendChatMessage} className="max-w-3xl mx-auto relative flex items-center">
             <input
               type="text"
-              placeholder={chatLoading ? "Grounded AI thinking..." : "Ask your notebook sources a question..."}
-              disabled={chatLoading || !hasReadySources}
+              placeholder={chatLoading? "Grounded AI thinking...": "Ask your notebook sources a question..."}
+              disabled={chatLoading ||!hasReadySources}
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
               className="w-full bg-zinc-900/70 border border-zinc-850 rounded-xl py-4 pl-4 pr-14 text-xs text-zinc-150 placeholder-zinc-600 focus:outline-none focus:border-zinc-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             />
             <button
               type="submit"
-              disabled={chatLoading || !chatInput.trim() || !hasReadySources}
+              disabled={chatLoading ||!chatInput.trim() ||!hasReadySources}
               className="absolute right-3 bg-white p-2 rounded-lg transition-all hover:scale-105 active:scale-95 disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
             >
               <SendIcon />
@@ -1472,13 +1472,13 @@ export default function Dashboard() {
       </section>
 
       {/* COLUMN 3: RIGHT PANEL (Sources Explorer & Citation drawer) */}
-      {activeTab !== "canvas" && (
+      {activeTab!== "canvas" && (
         <aside className="w-80 bg-zinc-950 border-l border-zinc-900/60 flex flex-col p-4 gap-6 flex-shrink-0">
         
         {/* Source ingestion area */}
         <div className="flex flex-col gap-3">
           <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Sources Library</span>
-          {selectedWorkspace ? (
+          {selectedWorkspace? (
             <div className="flex flex-col gap-2">
               <button
                 onClick={() => setShowAddSource(true)}
@@ -1494,7 +1494,7 @@ export default function Dashboard() {
                 🔭 Deep Research
               </button>
             </div>
-          ) : (
+          ): (
             <p className="text-[10px] text-zinc-650">Select a notebook to add sources.</p>
           )}
         </div>
@@ -1523,11 +1523,11 @@ export default function Dashboard() {
         <div className="flex-grow flex flex-col gap-3 min-h-0">
           <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Ingested Sources ({sources.length})</span>
           <div className="flex-grow overflow-y-auto flex flex-col gap-2 pr-1">
-            {sources.length === 0 ? (
+            {sources.length === 0? (
               <div className="flex-grow flex items-center justify-center text-center p-8 border border-zinc-900 border-dashed rounded-xl">
                 <p className="text-[10px] text-zinc-600">No sources grounded yet. Add a file, website, or pasted text source to begin research.</p>
               </div>
-            ) : (
+            ): (
               sources.map((src) => {
                 const isProcessing = src.status === "processing";
                 const isFailed = src.status === "failed";
@@ -1544,13 +1544,13 @@ export default function Dashboard() {
                     <div className="flex items-center gap-3 min-w-0 flex-1">
                       {/* Tiny visual document decorator */}
                       <span className="w-6 h-6 rounded bg-zinc-900 border border-zinc-850 flex items-center justify-center flex-shrink-0">
-                        {isProcessing ? (
+                        {isProcessing? (
                           <svg className="w-3.5 h-3.5 text-orange-500 animate-spin" fill="none" viewBox="0 0 24 24">
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                           </svg>
-                        ) : (
-                          <svg className={`w-3.5 h-3.5 ${isFailed ? "text-red-500" : "text-zinc-400"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                        ): (
+                          <svg className={`w-3.5 h-3.5 ${isFailed? "text-red-500": "text-zinc-400"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                             <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                           </svg>
                         )}
@@ -1581,9 +1581,9 @@ export default function Dashboard() {
                     <button
                       onClick={() => handleDeleteDocument(src.id)}
                       className={`transition-opacity p-1 hover:bg-red-950/20 border border-transparent hover:border-red-900/30 rounded cursor-pointer ${
-                        isFailed ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                        isFailed? "opacity-100": "opacity-0 group-hover:opacity-100"
                       }`}
-                      title={isFailed ? "Remove failed upload" : "Delete source"}
+                      title={isFailed? "Remove failed upload": "Delete source"}
                     >
                       <TrashIcon />
                     </button>
@@ -1622,7 +1622,7 @@ export default function Dashboard() {
                 if (isYoutube) {
                   const cleanName = displayName.replace(/\s*\(YouTube\)$/i, "");
                   ts = extractYoutubeTimestamp(selectedCitation.content || selectedCitation.text || "");
-                  displayName = ts ? `${cleanName} @ ${ts}` : cleanName;
+                  displayName = ts? `${cleanName} @ ${ts}`: cleanName;
                   if (selectedCitation.source_url) {
                     const seconds = parseTimeToSeconds(ts);
                     watchUrl = `${selectedCitation.source_url}&t=${seconds}s`;
@@ -1632,8 +1632,8 @@ export default function Dashboard() {
                   <div className="flex flex-col gap-1">
                     <span className="text-[11px] text-white font-semibold truncate">{displayName}</span>
                     <span className="text-[9px] text-zinc-550">
-                      {isYoutube ? (
-                        watchUrl && ts ? (
+                      {isYoutube? (
+                        watchUrl && ts? (
                           <a
                             href={watchUrl}
                             target="_blank"
@@ -1642,10 +1642,10 @@ export default function Dashboard() {
                           >
                             Watch at {ts} &rarr;
                           </a>
-                        ) : (
+                        ): (
                           "YouTube"
                         )
-                      ) : (
+                      ): (
                         citationLabel({
                           page: selectedCitation.page_number,
                           sheet: selectedCitation.sheet,
@@ -1673,7 +1673,7 @@ export default function Dashboard() {
         <StudioPanel
           notebookId={selectedWorkspace.id}
           selectedSourceIds={sources
-            .filter((s) => s.status === "ready" || !s.status || (s.status as string) === "grounded")
+            .filter((s) => s.status === "ready" ||!s.status || (s.status as string) === "grounded")
             .map((s) => s.id)}
           token={token}
         />

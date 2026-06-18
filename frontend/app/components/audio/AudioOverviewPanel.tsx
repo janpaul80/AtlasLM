@@ -59,7 +59,7 @@ export default function AudioOverviewPanel({ workspaceId, token, docIds }: Props
       setOverview(ov);
       setPhase("ready");
     } catch (e: any) {
-      setError(e?.message ?? "Something went wrong. Try again.");
+      setError(e?.message?? "Something went wrong. Try again.");
       setPhase("setup");
     }
   }
@@ -82,7 +82,7 @@ export default function AudioOverviewPanel({ workspaceId, token, docIds }: Props
       const r = await createShareLink(workspaceId, overview.overview_id, token);
       setShareUrl(`${window.location.origin}${r.share_url}`);
     } catch (e: any) {
-      setError(e?.message ?? "Could not create the public link.");
+      setError(e?.message?? "Could not create the public link.");
     }
   }
 
@@ -94,17 +94,17 @@ export default function AudioOverviewPanel({ workspaceId, token, docIds }: Props
     copyTimer.current = setTimeout(() => setCopied(false), 1600);
   }
 
-  const lines: ScriptLine[] = overview?.transcript ?? [];
-  const dur = overview?.duration ?? 0;
+  const lines: ScriptLine[] = overview?.transcript?? [];
+  const dur = overview?.duration?? 0;
   const activeLine = lines.reduce(
-    (acc, l, i) => (pos >= (l.start ?? 0) ? i : acc), 0);
+    (acc, l, i) => (pos >= (l.start?? 0)? i: acc), 0);
 
   return (
     <div className="ao-root">
-      {phase !== "ready" ? (
+      {phase!== "ready"? (
         <div className="ao-setup">
           <div className="ao-hero">
-            <div className="ao-hero-icon" aria-hidden>🎧</div>
+            <div className="ao-hero-icon" aria-hidden>{headphonesIcon}</div>
             <h3>Audio Overview</h3>
             <p>Two hosts turn your sources into a short, listenable conversation. Generated on-device and grounded in your selected sources.</p>
           </div>
@@ -113,7 +113,7 @@ export default function AudioOverviewPanel({ workspaceId, token, docIds }: Props
             <span className="ao-label">Voice</span>
             {VOICES.map((v) => (
               <button key={v.id} type="button"
-                className={`ao-opt ${voice === v.id ? "is-sel" : ""}`}
+                className={`ao-opt ${voice === v.id? "is-sel": ""}`}
                 disabled={phase === "generating"} onClick={() => setVoice(v.id)}>
                 <span className="ao-opt-main">
                   {v.label}
@@ -129,7 +129,7 @@ export default function AudioOverviewPanel({ workspaceId, token, docIds }: Props
             <div className="ao-grid2">
               {STYLES.map((s) => (
                 <button key={s.id} type="button"
-                  className={`ao-opt ${style === s.id ? "is-sel" : ""}`}
+                  className={`ao-opt ${style === s.id? "is-sel": ""}`}
                   disabled={phase === "generating"} onClick={() => setStyle(s.id)}>
                   <span className="ao-opt-main">{s.label}</span>
                   <span className="ao-opt-sub">{s.sub}</span>
@@ -142,11 +142,11 @@ export default function AudioOverviewPanel({ workspaceId, token, docIds }: Props
 
           <button type="button" className="ao-generate"
             disabled={phase === "generating"} onClick={onGenerate}>
-            {phase === "generating" ? "Generating..." : "Generate Audio Overview"}
+            {phase === "generating"? "Generating...": "Generate Audio Overview"}
           </button>
           <p className="ao-note">Atlas Voice runs on-device, so you can generate as many overviews as you want at no cost.</p>
         </div>
-      ) : (
+      ): (
         <div className="ao-player-wrap">
           <div className="ao-topbar">
             <span>Audio Overview</span>
@@ -155,7 +155,7 @@ export default function AudioOverviewPanel({ workspaceId, token, docIds }: Props
 
           <div className="ao-player">
             <div className="ao-now">
-              <div className="ao-now-icon" aria-hidden>🎧</div>
+              <div className="ao-now-icon" aria-hidden>{headphonesIcon}</div>
               <div className="ao-now-meta">
                 <div className="ao-now-title">{overview?.title}</div>
                 <div className="ao-now-sub">{fmt(dur)} · {overview?.voice}</div>
@@ -170,14 +170,14 @@ export default function AudioOverviewPanel({ workspaceId, token, docIds }: Props
 
             <div className="ao-progress">
               <div className="ao-progress-fill"
-                style={{ width: `${dur ? (pos / dur) * 100 : 0}%` }} />
+                style={{ width: `${dur? (pos / dur) * 100: 0}%` }} />
             </div>
             <div className="ao-times"><span>{fmt(pos)}</span><span>{fmt(dur)}</span></div>
 
             <div className="ao-controls">
               <button type="button" className="ao-play" onClick={togglePlay}
-                aria-label={playing ? "Pause" : "Play"}>
-                {playing ? "Pause" : "Play"}
+                aria-label={playing? "Pause": "Play"}>
+                {playing? "Pause": "Play"}
               </button>
             </div>
           </div>
@@ -185,9 +185,9 @@ export default function AudioOverviewPanel({ workspaceId, token, docIds }: Props
           <div className="ao-transcript">
             <span className="ao-label">Transcript</span>
             {lines.map((l, i) => (
-              <div key={i} className={`ao-line ${i === activeLine && playing ? "is-active" : ""}`}>
+              <div key={i} className={`ao-line ${i === activeLine && playing? "is-active": ""}`}>
                 <span className={`ao-spk ao-spk-${l.speaker}`}>{l.name}</span>
-                <p>{l.text}{l.cite ? <span className="ao-cite">[{l.cite}]</span> : null}</p>
+                <p>{l.text}{l.cite? <span className="ao-cite">[{l.cite}]</span>: null}</p>
               </div>
             ))}
           </div>
@@ -200,15 +200,15 @@ export default function AudioOverviewPanel({ workspaceId, token, docIds }: Props
             </div>
 
             <span className="ao-label">Share</span>
-            {!shareUrl ? (
+            {!shareUrl? (
               <button type="button" className="ao-share" onClick={onShare}>
                 Create public link
               </button>
-            ) : (
+            ): (
               <div className="ao-link">
                 <input readOnly value={shareUrl} aria-label="Public link" />
-                <button type="button" onClick={copyLink} className={copied ? "is-copied" : ""}>
-                  {copied ? "Copied" : "Copy"}
+                <button type="button" onClick={copyLink} className={copied? "is-copied": ""}>
+                  {copied? "Copied": "Copy"}
                 </button>
               </div>
             )}
@@ -220,3 +220,10 @@ export default function AudioOverviewPanel({ workspaceId, token, docIds }: Props
     </div>
   );
 }
+
+const headphonesIcon = (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "#fff" }}>
+    <path d="M3 18v-6a9 9 0 0 1 18 0v6" />
+    <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z" />
+  </svg>
+);

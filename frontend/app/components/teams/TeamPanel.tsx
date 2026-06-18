@@ -49,10 +49,10 @@ export default function TeamPanel({ workspaceId, seatLimit = 5 }: { workspaceId:
 
   function flash(m: string) { setToast(m); window.setTimeout(() => setToast(""), 2600); }
 
-  const yourRole = state?.your_role ?? "viewer";
+  const yourRole = state?.your_role?? "viewer";
   const canManage = yourRole === "owner";
   const canInvite = yourRole === "owner" || yourRole === "editor";
-  const used = (state?.members.length ?? 0) + (state?.invites.length ?? 0);
+  const used = (state?.members.length?? 0) + (state?.invites.length?? 0);
 
   async function onInvite(e: React.FormEvent) {
     e.preventDefault();
@@ -102,7 +102,7 @@ export default function TeamPanel({ workspaceId, seatLimit = 5 }: { workspaceId:
               {canManage && <option value="editor">Editor</option>}
             </select>
             <button className="team-btn atlas-cta" type="submit" disabled={busy}>
-              {busy ? "Sending" : "Send invite"}
+              {busy? "Sending": "Send invite"}
             </button>
           </div>
           {error && <div style={{ color: "var(--atlas-danger)", fontSize: 13, marginTop: 10 }}>{error}</div>}
@@ -120,12 +120,12 @@ export default function TeamPanel({ workspaceId, seatLimit = 5 }: { workspaceId:
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 600, fontSize: 14 }}>{m.user_id}</div>
             </div>
-            {m.role === "owner" || !canManage ? (
+            {m.role === "owner" ||!canManage? (
               <span className="team-pill" style={{ color: ROLE_COLOR[m.role] }}>
                 <span style={{ width: 6, height: 6, borderRadius: 999, background: ROLE_COLOR[m.role] }} />
                 {ROLE_LABEL[m.role]}
               </span>
-            ) : (
+            ): (
               <select
                 className="team-select" value={m.role}
                 onChange={async (e) => { await changeRole(workspaceId, m.user_id, e.target.value as Role); flash("Role updated"); load(); }}
@@ -135,7 +135,7 @@ export default function TeamPanel({ workspaceId, seatLimit = 5 }: { workspaceId:
                 <option value="viewer">Viewer</option>
               </select>
             )}
-            {canManage && m.role !== "owner" && (
+            {canManage && m.role!== "owner" && (
               <button className="team-btn team-ghost"
                 onClick={async () => { await removeMember(workspaceId, m.user_id); flash("Member removed"); load(); }}
                 aria-label={"Remove " + m.user_id}>Remove</button>

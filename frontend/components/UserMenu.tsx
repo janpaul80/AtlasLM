@@ -20,7 +20,7 @@ export default function UserMenu() {
     await supabase.auth.signOut();
     
     // Clear AtlasLM session state for clean user handoff
-    if (typeof window !== 'undefined') {
+    if (typeof window!== 'undefined') {
       localStorage.removeItem("selectedWorkspaceId");
       localStorage.removeItem("selectedSessionId");
     }
