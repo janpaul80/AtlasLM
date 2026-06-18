@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Patch 016B - Step 2: create the upload keystore (one time) and build signed AAB + APK.
-# Run from android-shell/. Requires the Android SDK + JDK 17.
+# Run from android-shell/android-shell/. Requires the Android SDK + JDK 17.
 set -euo pipefail
 
 KEYSTORE="atlaslm-release.jks"

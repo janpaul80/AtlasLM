@@ -6,22 +6,23 @@
   "scripts": {
     "sync": "cap sync android",
     "open": "cap open android",
-    "build:web": "cd ../frontend && next build && next export -o out",
-    "build:apk": "cd android && ./gradlew assembleRelease",
-    "build:aab": "cd android && ./gradlew bundleRelease",
+    "build:web": "cross-env BUILD_TARGET=mobile npm --prefix ../../frontend run build",
+    "build:apk": "cd android && (gradlew assembleRelease || ./gradlew assembleRelease)",
+    "build:aab": "cd android && (gradlew bundleRelease || ./gradlew bundleRelease)",
     "build:all": "npm run build:web && npm run sync && npm run build:aab"
   },
   "dependencies": {
     "@capacitor/android": "^6.1.0",
-    "@capacitor/core": "^6.1.0",
-    "@capacitor/splash-screen": "^6.0.0",
-    "@capacitor/status-bar": "^6.0.0",
-    "@capacitor/keyboard": "^6.0.0",
     "@capacitor/app": "^6.0.0",
+    "@capacitor/core": "^6.1.0",
     "@capacitor/haptics": "^6.0.0",
-    "@capacitor/preferences": "^6.0.0"
+    "@capacitor/keyboard": "^6.0.0",
+    "@capacitor/preferences": "^6.0.0",
+    "@capacitor/splash-screen": "^6.0.0",
+    "@capacitor/status-bar": "^6.0.0"
   },
   "devDependencies": {
-    "@capacitor/cli": "^6.1.0"
+    "@capacitor/cli": "^6.1.0",
+    "cross-env": "^7.0.3"
   }
 }

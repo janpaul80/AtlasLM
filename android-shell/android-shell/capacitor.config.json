@@ -1,7 +1,7 @@
 {
   "appId": "cloud.atlaslm.app",
   "appName": "AtlasLM",
-  "webDir": "../frontend/out",
+  "webDir": "../../frontend/out",
   "server": {
     "androidScheme": "https",
     "hostname": "atlaslm.cloud",

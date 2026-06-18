@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Patch 016B - Step 1: scaffold the native Android project.
-# Run on a machine with Node 18+ and the Android SDK. From android-shell/.
+# Run on a machine with Node 18+ and the Android SDK. From android-shell/android-shell/.
 set -euo pipefail
 
 echo "[*] Installing Capacitor tooling"
