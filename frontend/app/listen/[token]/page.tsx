@@ -19,6 +19,12 @@ async function getData(token: string) {
   }
 }
 
+// Mobile export pre-renders no token pages; public links open the live site.
+export const dynamicParams = false;
+export async function generateStaticParams() {
+  return [];
+}
+
 export default async function ListenPage(
   { params }: { params: { token: string } },
 ) {

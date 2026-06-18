@@ -4,13 +4,15 @@ import { supabaseServer } from '@/lib/supabaseServer'
 import UserMenu from '@/components/UserMenu'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const supabase = await supabaseServer()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  if (process.env.BUILD_TARGET !== 'mobile') {
+    const supabase = await supabaseServer()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
 
-  if (!user) {
-    redirect('/login')
+    if (!user) {
+      redirect('/login')
+    }
   }
 
   return (
@@ -27,4 +29,4 @@ export default async function DashboardLayout({ children }: { children: React.Re
       </main>
     </div>
   )
-}
+}

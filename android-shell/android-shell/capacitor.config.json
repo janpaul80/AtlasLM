@@ -1,0 +1,31 @@
+{
+  "appId": "cloud.atlaslm.app",
+  "appName": "AtlasLM",
+  "webDir": "../../frontend/out",
+  "server": {
+    "androidScheme": "https",
+    "hostname": "atlaslm.cloud",
+    "allowNavigation": ["atlaslm.cloud", "*.atlaslm.cloud"]
+  },
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 1200,
+      "backgroundColor": "#0A0A0F",
+      "showSpinner": false,
+      "androidScaleType": "CENTER_CROP"
+    },
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#0A0A0F",
+      "overlaysWebView": false
+    },
+    "Keyboard": {
+      "resize": "body"
+    }
+  }
+}
