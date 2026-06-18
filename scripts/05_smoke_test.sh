@@ -34,7 +34,7 @@ check "backend API reachable" \
 
 echo "[*] Containers"
 check "all containers running" \
-  bash -c "docker compose ps --status running | grep -qE 'frontend|backend|db|caddy'"
+  bash -c "cd /home/atlas/atlaslm && docker compose ps --status running | grep -qE 'frontend|backend|db|caddy'"
 
 echo "[*] Database"
 check "verify_teams offline checks pass" \
