@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     # Active engine routing (server-side only; never exposed to clients)
     ATLAS_ACTIVE_PROVIDER: str = Field(default="langdock", env="ATLAS_ACTIVE_PROVIDER")
     
+    # Billing & Supabase Admin Gating (Patch 008)
+    STRIPE_WEBHOOK_SECRET: str = Field(default="", env="STRIPE_WEBHOOK_SECRET")
+    SUPABASE_SERVICE_ROLE_KEY: str = Field(default="", env="SUPABASE_SERVICE_ROLE_KEY")
+
     class Config:
         case_sensitive = True
         env_file = ".env"

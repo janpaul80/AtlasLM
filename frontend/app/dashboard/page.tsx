@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import Logo from "../../components/brand/logo";
 import { apiClient } from "@/lib/apiClient";
-import { supabaseBrowser } from "@/lib/supabaseClient";
+import { supabaseBrowser, getCurrentProfile } from "@/lib/supabaseClient";
 import StudioPanel from "@/app/components/studio/StudioPanel";
 import AddSourceModal from "@/app/components/sources/AddSourceModal";
 import DeepResearchDrawer from "@/app/components/research/DeepResearchDrawer";
@@ -13,6 +13,13 @@ import { citationLabel } from "@/lib/sources";
 import "@/app/components/research/deep-research.css";
 import ResearchCanvas from "@/app/dashboard/ResearchCanvas";
 import { OnboardingTour } from "@/app/dashboard/OnboardingTour";
+
+const LockIcon = () => (
+  <svg className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+  </svg>
+);
 
 function extractYoutubeTimestamp(content: string): string {
   if (!content) return "";
@@ -69,6 +76,7 @@ export default function Dashboard() {
   const [sources, setSources] = useState<DocumentSource[]>([]);
   const [showAddSource, setShowAddSource] = useState(false);
   const [drOpen, setDrOpen] = useState(false);
+  const [userTier, setUserTier] = useState<"Free" | "Pro" | "Team">("Free");
   const hasReadySources = sources.some((src) => src.status === "ready" || !src.status || (src.status as string) === "grounded");
   const [activeSourceTab, setActiveSourceTab] = useState<SourceTab>("files");
   const [urlInput, setUrlInput] = useState("");
@@ -232,6 +240,20 @@ export default function Dashboard() {
       }
     };
     fetchToken();
+  }, []);
+
+  useEffect(() => {
+    const loadProfile = async () => {
+      try {
+        const profile = await getCurrentProfile();
+        if (profile) {
+          setUserTier(profile.tier);
+        }
+      } catch (err) {
+        console.error("Failed to load user profile tier:", err);
+      }
+    };
+    loadProfile();
   }, []);
 
   const fetchStudioOutputs = async (wsId: string) => {
@@ -1161,14 +1183,15 @@ export default function Dashboard() {
               Grounded Chat
             </button>
             <button
-              onClick={() => setActiveTab("studio")}
-              className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
+              onClick={() => { if (userTier !== 'Free') setActiveTab("studio"); }}
+              className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 ${
                 activeTab === "studio"
                   ? "bg-zinc-800 text-white shadow-sm"
                   : "text-zinc-400 hover:text-zinc-200"
-              }`}
+              } ${userTier === 'Free' ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
             >
-              AtlasLM Studio
+              <span>AtlasLM Studio</span>
+              {userTier === 'Free' && <LockIcon />}
             </button>
           </div>
         </header>
@@ -1488,10 +1511,15 @@ export default function Dashboard() {
                 <span>Add Source</span>
               </button>
               <button
-                onClick={() => setDrOpen(true)}
-                className="w-full py-3 px-4 rounded-xl border border-dashed border-zinc-800 bg-zinc-900/40 text-[11px] font-bold uppercase tracking-wider text-zinc-400 hover:border-zinc-700 hover:bg-zinc-900/60 transition-all text-center cursor-pointer flex items-center justify-center gap-2 group"
+                onClick={() => { if (userTier !== 'Free') setDrOpen(true); }}
+                className={`w-full py-3 px-4 rounded-xl border border-dashed text-[11px] font-bold uppercase tracking-wider transition-all text-center flex items-center justify-center gap-2 group ${
+                  userTier === 'Free'
+                    ? "border-zinc-900 bg-zinc-900/20 text-zinc-650 opacity-50 cursor-not-allowed"
+                    : "border-zinc-800 bg-zinc-900/40 text-zinc-400 hover:border-zinc-700 hover:bg-zinc-900/60 cursor-pointer"
+                }`}
               >
-                🔭 Deep Research
+                <span>🔭 Deep Research</span>
+                {userTier === 'Free' && <LockIcon />}
               </button>
             </div>
           ) : (

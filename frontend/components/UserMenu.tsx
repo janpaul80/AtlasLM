@@ -1,23 +1,35 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { supabaseBrowser } from "@/lib/supabaseClient";
+import { supabaseBrowser, getCurrentProfile, signOut } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 
 export default function UserMenu() {
   const router = useRouter();
-  const supabase = supabaseBrowser();
   const [user, setUser] = useState<any>(null);
+  const [tier, setTier] = useState<string>("Free");
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setUser(data.user);
-    });
+    const loadProfile = async () => {
+      const profile = await getCurrentProfile();
+      if (profile) {
+        setUser(profile);
+        setTier(profile.tier);
+      } else {
+        // Fallback: check getUser directly
+        const supabase = supabaseBrowser();
+        const { data } = await supabase.auth.getUser();
+        if (data?.user) {
+          setUser(data.user);
+        }
+      }
+    };
+    loadProfile();
   }, []);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    await signOut();
     
     // Clear AtlasLM session state for clean user handoff
     if (typeof window !== 'undefined') {
@@ -44,12 +56,12 @@ export default function UserMenu() {
         </div>
         <div className="flex flex-col text-left">
           <span className="text-zinc-200 font-semibold leading-tight">{email}</span>
-          <span className="text-[10px] text-orange-500 font-bold uppercase">Free</span>
+          <span className="text-[10px] text-orange-500 font-bold uppercase">{tier}</span>
         </div>
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-44 rounded-xl bg-zinc-900 border border-zinc-800 shadow-lg overflow-hidden">
+        <div className="absolute right-0 mt-2 w-44 rounded-xl bg-zinc-900 border border-zinc-800 shadow-lg overflow-hidden z-50">
           <button
             onClick={() => router.push("/account")}
             className="w-full text-left px-4 py-2 text-zinc-200 hover:bg-zinc-800"

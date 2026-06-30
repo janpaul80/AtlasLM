@@ -11,6 +11,7 @@ from .core.config import settings
 from .core.database import engine, Base
 from .api.endpoints import router as api_router
 from .middleware.auth_middleware import AuthMiddleware
+from .stripe_webhook import router as stripe_router
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
+        "http://localhost:3100",
         "http://localhost:3010",
         "https://atlaslm.cloud",
         "https://www.atlaslm.cloud",
@@ -56,6 +58,7 @@ app.add_middleware(
 app.add_middleware(AuthMiddleware)
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
+app.include_router(stripe_router)
 
 from .routes import sources
 app.include_router(sources.router)
